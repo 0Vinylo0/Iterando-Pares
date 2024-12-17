@@ -1,9 +1,29 @@
+# Configura el puerto de control para Tor. Se usa para interactuar con Tor a través de herramientas externas.
 ControlPort 9051
+
+# Especifica una contraseña "hasheada" para proteger el acceso al ControlPort.
+# La contraseña se debe generar usando: tor --hash-password <tu_contraseña>
 HashedControlPassword <HASH creado anteriromente>
+
+# Fuerza a Tor a usar nodos de salida ubicados en países específicos.
+# En este caso: España (es), Alemania (de), Países Bajos (nl) y Francia (fr).
 ExitNodes {es},{de},{nl},{fr}
+
+# Excluye nodos de salida en países no deseados por seguridad o rendimiento.
+# Aquí se excluyen: Rusia (ru), China (cn), Irán (ir) y Pakistán (pk).
 ExcludeExitNodes {ru},{cn},{ir},{pk}
 
 # Timeouts y reintentos ajustados para rapidez
+
+# Configura el tiempo máximo (en segundos) para intentar construir un circuito Tor.
+# Si no se construye en este tiempo, se cancela y se reintenta.
 CircuitBuildTimeout 20
+
+# Define cada cuántos segundos Tor construirá un nuevo circuito para mejorar el anonimato.
+# Un valor más frecuente ayuda a la privacidad, pero puede afectar el rendimiento.
 NewCircuitPeriod 30
-StrictNodes 0
+
+# Establece si Tor debe respetar estrictamente las restricciones de nodos.
+# 0 = No obligatorio (pero se intenta cumplir).
+# 1 = Obligatorio cumplir con ExitNodes y ExcludeExitNodes.
+StrictNodes 1
