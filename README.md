@@ -62,7 +62,7 @@ cd <REPO_NAME>
 ### 2. Crear un Entorno Virtual (Opcional pero Recomendado)
 ```bash
 apt install python3.12-venv
-python -m venv env
+python3 -m venv env
 source env/bin/activate
 ```
 
