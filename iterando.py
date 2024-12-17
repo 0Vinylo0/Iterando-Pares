@@ -8,6 +8,8 @@ import json
 import time
 import subprocess
 import random
+from stem import Signal
+from stem.control import Controller
 from multiprocessing import Process
 
 class ParesFileScraper:
@@ -33,6 +35,19 @@ class ParesFileScraper:
     def save_descriptions(self):
         with open(self.description_file, "w", encoding='utf-8') as desc_file:
             json.dump(self.urls_description, desc_file, indent=4, ensure_ascii=False)
+
+    def request_new_tor_identity(self):
+        """Solicita una nueva identidad (IP) al servicio Tor."""
+        try:
+            with open("/var/run/tor/control", "w") as tor_control:
+                tor_control.write("AUTHENTICATE \"\"\r\n")
+                tor_control.write("SIGNAL NEWNYM\r\n")
+                tor_control.write("QUIT\r\n")
+            print("Nueva identidad solicitada a Tor.")
+            time.sleep(10)  # Espera para asegurar que el nuevo circuito esté listo
+        except Exception as e:
+            print(f"Error solicitando nueva identidad de Tor: {e}")
+
 
     def get_current_ip(self):
         """Obtiene la IP pública visible a través de Tor."""
@@ -61,6 +76,7 @@ class ParesFileScraper:
     def get_page(self, url, max_retries=5):
         for attempt in range(max_retries):
             try:
+                self.request_new_tor_identity()
                 self.get_current_ip()
                 response = self.session.get(url, timeout=30)  # Add timeout to prevent hanging
                 response.raise_for_status()
@@ -77,7 +93,6 @@ class ParesFileScraper:
                 else:
                     self.log_error(f"Failed to fetch {url} after {max_retries} attempts.")
                     return None
-
 
     def process_description(self, url):
         html_content = self.get_page(url)
@@ -337,6 +352,8 @@ class ParesFileScraper:
             elif "contiene/" in url:
                 self.process_contiene(url)
             self.mark_as_done(url)
+            self.request_new_tor_identity()
+            self.get_current_ip()
 
     def __del__(self):
         # Elimina el archivo de cookies cuando se destruye la instancia

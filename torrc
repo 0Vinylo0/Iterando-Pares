@@ -5,5 +5,6 @@ ExcludeExitNodes {ru},{cn},{ir},{pk}
 
 # Timeouts y reintentos ajustados para rapidez
 CircuitBuildTimeout 20
-NewCircuitPeriod 30
+NewCircuitPeriod 60
+MaxCircuitDirtiness 120
 StrictNodes 0

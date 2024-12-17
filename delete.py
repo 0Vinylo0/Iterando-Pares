@@ -11,7 +11,7 @@ def delete_all_image_keys():
     r = redis.StrictRedis(host='localhost', port=6379, db=0)
 
     # Buscar y eliminar todas las claves relacionadas con imágenes
-    patterns = ["images:*", "failed_images:*"]  # Patrones para imágenes exitosas y falladas
+    patterns = ["images:*", "failed_images:*", "last_downloaded_image:*"]  # Patrones para imágenes exitosas y falladas
     for pattern in patterns:
         print(f"Eliminando claves que coinciden con: {pattern}")
         for key in r.scan_iter(pattern):
