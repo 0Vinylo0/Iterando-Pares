@@ -8,3 +8,6 @@ CircuitBuildTimeout 20
 NewCircuitPeriod 60
 MaxCircuitDirtiness 120
 StrictNodes 0
+ControlSocket /var/run/tor/control.sock
+ControlSocketsGroupWritable 1
+CookieAuthentication 1
