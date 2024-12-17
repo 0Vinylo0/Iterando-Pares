@@ -77,7 +77,9 @@ pip install -r requirements.txt
   tor --hash-password "mi_contraseña_segura"
   ```
 - Edita el archivo de configuración `torrc` para activar el proxy:
+ 
 - [Archivo /etc/tor/torrc](torrc)
+
 - Inicia el servicio de TOR:
   ```bash
   systemctl start tor
