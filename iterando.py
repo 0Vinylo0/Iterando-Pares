@@ -58,15 +58,25 @@ class ParesFileScraper:
         # Verifica si la URL ya fue procesada
         return self.r.sismember("done_urls", url)
 
-    def get_page(self, url):
-        try:
-            self.get_current_ip()
-            response = self.session.get(url)
-            response.raise_for_status()
-            return response.text
-        except requests.RequestException as e:
-            self.log_error(f"Error fetching {url}: {e}")
-            return None
+    def get_page(self, url, max_retries=5):
+        for attempt in range(max_retries):
+            try:
+                self.get_current_ip()
+                response = self.session.get(url, timeout=30)  # Add timeout to prevent hanging
+                response.raise_for_status()
+                return response.text
+            except requests.RequestException as e:
+                # Calculate exponential backoff time
+                wait_time = (2 ** attempt) + random.random()
+                
+                self.log_error(f"Error fetching {url} (Attempt {attempt + 1}/{max_retries}): {e}")
+                
+                if attempt < max_retries - 1:
+                    print(f"Retrying in {wait_time:.2f} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    self.log_error(f"Failed to fetch {url} after {max_retries} attempts.")
+                    return None
 
 
     def process_description(self, url):
@@ -217,8 +227,8 @@ class ParesFileScraper:
                 continue
 
             # Descargar la imagen con reintentos
-            for attempt in range(3):  # Reintentar hasta 3 veces
-                print(f"Descargando imagen {idx}... (Intento {attempt + 1}/3)")
+            for attempt in range(10):  # Reintentar hasta 3 veces
+                print(f"Descargando imagen {idx}... (Intento {attempt + 1}/10)")
                 command = [
                     "curl",
                     "-s",
