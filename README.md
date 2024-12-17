@@ -5,6 +5,9 @@ Este proyecto es un script en Python para sacar datos y imágenes de una web hac
 
 Este proyecto es un *scraper* de archivos diseñado para recorrer páginas de **pares.mcu.es** a través de TOR, utilizando Redis como sistema de almacenamiento temporal y cookies para descargar imágenes. El programa es capaz de procesar enlaces recursivamente, verificar imágenes descargadas, manejar errores y realizar descargas optimizadas.
 
+<a href="https://www.python.org" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg" alt="python" width="40" height="40"/>
+<a href="https://www.linux.org/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/linux/linux-original.svg" alt="linux" width="40" height="40"/>
+
 ## Descripción de los Archivos
 
 ### 1. `iterando.py`
