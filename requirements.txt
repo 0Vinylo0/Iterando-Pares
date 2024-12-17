@@ -1,3 +1,5 @@
 beautifulsoup4
 redis
 requests
+requests[socks]
+pysocks
