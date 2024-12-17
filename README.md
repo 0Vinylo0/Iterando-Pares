@@ -59,8 +59,7 @@ cd <REPO_NAME>
 ### 2. Crear un Entorno Virtual (Opcional pero Recomendado)
 ```bash
 python -m venv env
-source env/bin/activate  # En Linux o Mac
-env\Scripts\activate  # En Windows
+source env/bin/activate
 ```
 
 ### 3. Instalar Dependencias
@@ -69,11 +68,16 @@ pip install -r requirements.txt
 ```
 
 ### 4. Instalar y Configurar TOR
-- Instala TOR desde su página oficial: [TOR Project](https://www.torproject.org/).
-- Edita el archivo de configuración `torrc` para activar el proxy:
+- Instala TOR desde su página oficial: [TOR Project](https://www.torproject.org/) o con:
   ```bash
-  SocksPort 9050
+  apt install tor
   ```
+- Generamos una clave para tor con:
+  ```bash
+  tor --hash-password "mi_contraseña_segura"
+  ```
+- Edita el archivo de configuración `torrc` para activar el proxy:
+- [Archivo /etc/tor/torrc](torrc)
 - Inicia el servicio de TOR:
   ```bash
   systemctl start tor
