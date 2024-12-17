@@ -7,7 +7,7 @@ Este proyecto es un *scraper* de archivos diseñado para recorrer páginas de **
 
 <a href="https://www.python.org" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg" alt="python" width="40" height="40"/>
 <a href="https://www.linux.org/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/linux/linux-original.svg" alt="linux" width="40" height="40"/>
-<a href="https://www.torproject.org/es/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/TheTorProject/tor-media/25a7a48199a00da805fdc8de2a2f662b170bcead/Tor%20Logo/Purple.svg" alt="tor" width="40" height="40"/>
+<a href="https://www.torproject.org/es/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/TheTorProject/tor-media/25a7a48199a00da805fdc8de2a2f662b170bcead/Tor%20Logo/Purple.svg" alt="tor" width="40" height="40"/> <a href="https://redis.io/es/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/ca28c779441053191ff11710fe24a9e6c23690d6/icons/redis/redis-original-wordmark.svg" alt="tor" width="40" height="40"/>
 
 ## Descripción de los Archivos
 
