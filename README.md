@@ -2,7 +2,7 @@
 Este proyecto es un script en Python para sacar datos e imágenes de una web haciendo scraping
 
 ***NOTA***
-- Instalar automatico con install.sh, ejecutar con `sh install.sh`
+- Instalar automatico con install.sh, ejecutar con `sh install.sh` Recomiendo leer la guia para mejor entendimiento del programa y el auto install ***IMPORTANTE*** automatico no terminado, la opcion de terminar proceso no funciona bien hay que retocarlo, puedes instalar y ejecutar fuera del script, entras en el python virtual y ejecutas con `python3 controller.py`
 
 ## Pares File Scraper
 
