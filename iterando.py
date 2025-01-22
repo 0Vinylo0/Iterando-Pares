@@ -58,25 +58,67 @@ class ParesFileScraper:
         # Verifica si la URL ya fue procesada
         return self.r.sismember("done_urls", url)
 
-    def get_page(self, url, max_retries=5):
-        for attempt in range(max_retries):
-            try:
-                self.get_current_ip()
-                response = self.session.get(url, timeout=30)  # Add timeout to prevent hanging
-                response.raise_for_status()
-                return response.text
-            except requests.RequestException as e:
-                # Calculate exponential backoff time
-                wait_time = (2 ** attempt) + random.random()
-                
-                self.log_error(f"Error fetching {url} (Attempt {attempt + 1}/{max_retries}): {e}")
-                
-                if attempt < max_retries - 1:
-                    print(f"Retrying in {wait_time:.2f} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    self.log_error(f"Failed to fetch {url} after {max_retries} attempts.")
-                    return None
+    def get_page(self, url):
+        try:
+            self.get_current_ip()
+            response = self.session.get(url)
+            response.raise_for_status()
+            return response.text
+        except requests.RequestException as e:
+            self.log_error(f"Error fetching {url}: {e}")
+            return None
+
+    def parse_html_to_json(self, html_content):
+        """
+        Parsea el contenido HTML y lo convierte a un diccionario JSON con datos sanitizados.
+        """
+        soup = BeautifulSoup(html_content, 'html.parser')
+        data = {}
+
+        # Buscar el contenedor principal
+        wrapper = soup.find(id="wrapper_ficha")
+        if not wrapper:
+            return data
+
+        # Buscar la sección del área
+        area = wrapper.find(class_="area")
+        if not area:
+            return data
+
+        # Buscar todas las secciones de información
+        infos = area.find_all(class_="info")
+        for info in infos:
+            title_element = info.find('h4', class_='aviso')
+            if title_element:
+                title = title_element.get_text(strip=True).rstrip(':')
+                value_element = info.find('p')
+
+                if value_element:
+                    # Sanitizar el texto
+                    value = self.sanitizar_texto(''.join(value_element.stripped_strings))
+                    link = value_element.find('a')
+                    if link:
+                        data[title] = {
+                            'texto': value,
+                            'link': link['href']
+                        }
+                    else:
+                        data[title] = value
+
+        return data
+
+    def sanitizar_texto(self, texto):
+        """
+        Sanitiza un texto eliminando caracteres innecesarios como saltos de línea,
+        tabulaciones y espacios extra. También separa números y palabras si están juntos.
+        """
+        # 1. Eliminar caracteres de espacio, saltos de línea y tabulaciones innecesarias
+        texto_limpio = re.sub(r'\s+', ' ', texto).strip()
+
+        # 2. Separar palabras y números si están juntos
+        texto_limpio = re.sub(r'(\d+)', r' \1 ', texto_limpio).strip()
+
+        return texto_limpio
 
     def process_description(self, url):
         html_content = self.get_page(url)
@@ -87,9 +129,11 @@ class ParesFileScraper:
         if match:
             page_id = match.group(1)
             soup = BeautifulSoup(html_content, 'html.parser')
+            
+            #En caso de que solo queramos el titulo descomentar 
 
-            title_match = soup.find('h4', string=re.compile(r'Titulo Nombre Atribuido:'))
-            title = title_match.find_next('p').text.strip() if title_match else ""
+            #title_match = soup.find('h4', string=re.compile(r'Titulo Nombre Atribuido:'))
+            #title = title_match.find_next('p').text.strip() if title_match else "none"
 
             contiene_links = soup.find_all('a', href=re.compile(r'/contiene/\d+'))
             contiene_urls = [urljoin(self.base_url, link['href']) for link in contiene_links]
@@ -118,12 +162,15 @@ class ParesFileScraper:
                     # Descargar cada imagen y guardarla en la carpeta correspondiente
                     self.download_images(page_id, img_download_links)
 
+            description_data = self.parse_html_to_json(html_content)
+
             # Almacenar todos los datos en self.urls_description
             self.urls_description[page_id] = {
-                "title": title,
                 "url": url,
+                "additional_data": description_data,
                 "has_image": has_image,
-                "image_links": img_download_links  # Añadir los enlaces de descarga de imágenes
+                "image_links": img_download_links,  # Añadir los enlaces de descarga de imágenes
+                # Añadir todos los datos parseados
             }
 
             self.save_descriptions()
@@ -226,8 +273,8 @@ class ParesFileScraper:
                 continue
 
             # Descargar la imagen con reintentos
-            for attempt in range(10):  # Reintentar hasta 3 veces
-                print(f"Descargando imagen {idx}... (Intento {attempt + 1}/10)")
+            for attempt in range(3):  # Reintentar hasta 3 veces
+                print(f"Descargando imagen {idx}... (Intento {attempt + 1}/3)")
                 command = [
                     "curl",
                     "-s",
@@ -336,7 +383,6 @@ class ParesFileScraper:
             elif "contiene/" in url:
                 self.process_contiene(url)
             self.mark_as_done(url)
-            self.get_current_ip()
 
     def __del__(self):
         # Elimina el archivo de cookies cuando se destruye la instancia
