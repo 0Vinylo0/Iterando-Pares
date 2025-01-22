@@ -1,5 +1,4 @@
 ControlPort 9051
-HashedControlPassword 16:2A0864E7FC25A81B60054AE824E75D3DC9B263100B7971F81E4C6C4134
 ExitNodes {es},{de},{nl},{fr}
 ExcludeExitNodes {ru},{cn},{ir},{pk},{nl}
 
