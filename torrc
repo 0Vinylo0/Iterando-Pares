@@ -11,7 +11,7 @@ ExitNodes {es},{de},{nl},{fr}
 
 # Excluye nodos de salida en países no deseados por seguridad o rendimiento.
 # Aquí se excluyen: Rusia (ru), China (cn), Irán (ir) y Pakistán (pk).
-ExcludeExitNodes {ru},{cn},{ir},{pk}
+ExcludeExitNodes {ru},{cn},{ir},{pk},{nl}
 
 # Timeouts y reintentos ajustados para rapidez
 
