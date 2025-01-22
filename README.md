@@ -1,6 +1,9 @@
 # Iterando-Pares
 Este proyecto es un script en Python para sacar datos e imágenes de una web haciendo scraping
 
+***NOTA***
+- Instalar automatico con install.sh ejecutar con `sh install.sh`
+
 ## Pares File Scraper
 
 Este proyecto es un *scraper* de archivos diseñado para recorrer páginas de **pares.mcu.es** a través de TOR, utilizando Redis como sistema de almacenamiento temporal y cookies para descargar imágenes. El programa es capaz de procesar enlaces recursivamente, verificar imágenes descargadas, manejar errores y realizar descargas optimizadas.
