@@ -31,7 +31,7 @@ install_all() {
 
   echo "[1/8] Actualizando el sistema e instalando dependencias..."
   sudo apt update || die "Error al actualizar los paquetes."
-  sudo apt install -y git python3 python3-pip python3-venv redis-server tor || die "Error al instalar dependencias."
+  sudo apt install -y git python3 python3-pip python3-venv redis-server tor curl || die "Error al instalar dependencias."
 
   echo "[2/8] Clonando el repositorio..."
   git clone "$repo_url" || die "Error al clonar el repositorio."
