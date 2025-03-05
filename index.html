@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Diario Mercantil Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7fafc;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .container {
+      width: 90%;
+      margin: auto;
+    }
+
+    .search-bar {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .search-input,
+    .level-filter {
+      padding: 10px;
+      font-size: 1em;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    .search-input {
+      width: 60%;
+    }
+
+    .level-filter {
+      width: 30%;
+    }
+
+    .entry-card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+      padding: 20px;
+    }
+
+    .entry-title {
+      font-size: 1.5em;
+      color: #2c5282;
+      margin-bottom: 10px;
+    }
+
+    .metadata {
+      color: #666;
+      font-size: 0.9em;
+      margin-bottom: 10px;
+    }
+
+    .pdf-link {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: #3182ce;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .pdf-link:hover {
+      background: #2c5282;
+    }
+
+    .image-gallery {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .image-gallery img {
+      max-width: 100px;
+      max-height: 100px;
+      object-fit: cover;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .image-gallery img:hover {
+      transform: scale(1.1);
+    }
+
+    /* Modal de Imagen */
+    .image-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .image-modal-content {
+      max-width: 90%;
+      max-height: 90%;
+      position: relative;
+      overflow: hidden;
+      cursor: move;
+    }
+
+    .image-modal-content img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      transition: transform 0.3s ease;
+      user-select: none;
+      -moz-user-select: none;
+      -webkit-user-select: none;
+      -ms-user-select: none;
+    }
+
+    .zoom-controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border-radius: 20px;
+      padding: 10px;
+      display: flex;
+      gap: 20px;
+    }
+
+    .zoom-controls button {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      color: white;
+      font-size: 30px;
+      cursor: pointer;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="search-bar">
+      <input
+        type="text"
+        id="search"
+        class="search-input"
+        placeholder="Buscar por título o fecha..."
+        oninput="filterResults()"
+      />
+      <select id="level-filter" class="level-filter" onchange="filterResults()">
+        <option value="">Todos los niveles</option>
+      </select>
+    </div>
+    <div id="app">
+      <div class="loading">Cargando datos...</div>
+    </div>
+  </div>
+
+  <!-- Modal de Imagen con Zoom -->
+  <div id="imageModal" class="image-modal">
+    <div class="modal-close" onclick="closeImageModal()">&times;</div>
+    <div class="image-modal-content">
+      <img id="modalImage" src="" alt="Imagen Ampliada" />
+      <div class="zoom-controls">
+        <button onclick="zoomImage('in')">+</button>
+        <button onclick="zoomImage('out')">-</button>
+        <button onclick="resetZoom()">1:1</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allEntries = [];
+    let uniqueLevels = new Set();
+    let imagesByEntryId = {};
+    let currentImageSrc = '';
+    let zoomLevel = 1;
+    let isDragging = false;
+    let startX, startY, translateX = 0, translateY = 0;
+
+    async function loadData() {
+      const app = document.getElementById('app');
+      try {
+        const response = await fetch('description_data.json');
+        if (!response.ok) throw new Error('Error al cargar el JSON');
+        const data = await response.json();
+
+        allEntries = Object.keys(data).map(id => {
+          const entry = data[id];
+          const additionalData = entry.additional_data || {};
+          const level = additionalData["Nivel de Descripción"] || "Desconocido";
+
+          uniqueLevels.add(level);
+          return {
+            id,
+            title:
+              additionalData["Titulo Nombre Atribuido"] ||
+              additionalData["Titulo Nombre Formal"] ||
+              "Sin título",
+            date: additionalData["Fecha Creación"] || "Desconocida",
+            signatura: additionalData["Signatura"] || "Desconocida",
+            code: additionalData["Código de Referencia"] || "Desconocido",
+            level,
+            url: entry.url,
+            hasImage: entry.has_image
+          };
+        });
+
+        const imagePromises = allEntries
+          .filter(entry => entry.hasImage)
+          .map(async (entry) => {
+            try {
+              const imageFiles = await listImagesForEntry(entry.id);
+              if (imageFiles.length > 0) {
+                imagesByEntryId[entry.id] = imageFiles;
+              }
+            } catch (error) {
+              console.error(`Error cargando imágenes para ${entry.id}:`, error);
+            }
+          });
+
+        await Promise.all(imagePromises);
+
+        populateLevelFilter();
+        renderResults(allEntries);
+      } catch (error) {
+        app.innerHTML = `<div class="error">Error al cargar los datos: ${error.message}</div>`;
+      }
+    }
+
+    async function listImagesForEntry(entryId) {
+      const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif'];
+      const imageFiles = [];
+
+      for (const ext of imageExtensions) {
+        for (let i = 1; i <= 10; i++) {
+          const imagePath = `img/${entryId}/image_${i}${ext}`;
+          try {
+            const response = await fetch(imagePath);
+            if (response.ok) {
+              imageFiles.push(imagePath);
+            }
+          } catch (error) {
+            // No hacer nada si la imagen no existe
+          }
+        }
+      }
+
+      return imageFiles;
+    }
+
+    function populateLevelFilter() {
+      const levelFilter = document.getElementById('level-filter');
+      uniqueLevels.forEach(level => {
+        const option = document.createElement('option');
+        option.value = level;
+        option.textContent = level;
+        levelFilter.appendChild(option);
+      });
+    }
+
+    function renderResults(entries) {
+      const app = document.getElementById('app');
+      app.innerHTML = entries
+        .map(
+          entry => `
+        <div class="entry-card">
+          <h2 class="entry-title">${entry.title}</h2>
+          <div class="metadata">
+            <div>Fecha: ${entry.date}</div>
+            <div>Signatura: ${entry.signatura}</div>
+            <div>Código de Referencia: ${entry.code}</div>
+            <div>Nivel: ${entry.level}</div>
+          </div>
+          <a href="${entry.url}" target="_blank" class="pdf-link">Ver Descripción</a>
+          ${
+            entry.hasImage
+              ? `<div class="image-gallery" id="gallery-${entry.id}">
+                  ${
+                    imagesByEntryId[entry.id]
+                      ? imagesByEntryId[entry.id]
+                          .map(
+                            (img, index) =>
+                              `<img src="${img}" alt="Imagen" onclick="openImageModal('${img}')">`
+                          )
+                          .join('')
+                      : '<div>No se encontraron imágenes</div>'
+                  }
+                  </div>`
+              : ''
+          }
+        </div>
+      `
+        )
+        .join('');
+    }
+
+    function openImageModal(imageSrc) {
+      const modal = document.getElementById('imageModal');
+      const modalImage = document.getElementById('modalImage');
+      modalImage.src = imageSrc;
+      modal.style.display = 'flex';
+      currentImageSrc = imageSrc;
+      zoomLevel = 1;
+      translateX = 0;
+      translateY = 0;
+      updateImageTransform();
+
+      // Añadir event listeners para arrastrar
+      modalImage.addEventListener('mousedown', startDragging);
+      document.addEventListener('mousemove', drag);
+      document.addEventListener('mouseup', stopDragging);
+      document.addEventListener('mouseleave', stopDragging);
+    }
+
+    function startDragging(e) {
+      if (zoomLevel > 1) {
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+        e.preventDefault(); // Prevenir selección de texto
+      }
+    }
+
+    function drag(e) {
+      if (!isDragging) return;
+      
+      translateX = e.clientX - startX;
+      translateY = e.clientY - startY;
+      
+      updateImageTransform();
+    }
+
+    function stopDragging() {
+      isDragging = false;
+    }
+
+    function updateImageTransform() {
+      const modalImage = document.getElementById('modalImage');
+      modalImage.style.transform = `scale(${zoomLevel}) translate(${translateX / zoomLevel}px, ${translateY / zoomLevel}px)`;
+    }
+
+    function closeImageModal() {
+      const modal = document.getElementById('imageModal');
+      const modalImage = document.getElementById('modalImage');
+      modal.style.display = 'none';
+      zoomLevel = 1;
+      
+      // Eliminar event listeners
+      modalImage.removeEventListener('mousedown', startDragging);
+      document.removeEventListener('mousemove', drag);
+      document.removeEventListener('mouseup', stopDragging);
+      document.removeEventListener('mouseleave', stopDragging);
+    }
+
+    function zoomImage(direction) {
+      const modalImage = document.getElementById('modalImage');
+      
+      if (direction === 'in' && zoomLevel < 3) {
+        zoomLevel += 0.5;
+      } else if (direction === 'out' && zoomLevel > 1) {
+        zoomLevel -= 0.5;
+      }
+      
+      // Ajustar los límites de movimiento cuando se hace zoom
+      if (zoomLevel === 1) {
+        translateX = 0;
+        translateY = 0;
+      }
+      
+      updateImageTransform();
+    }
+
+    function resetZoom() {
+      translateX = 0;
+      translateY = 0;
+      zoomLevel = 1;
+      updateImageTransform();
+    }
+
+    function filterResults() {
+      const searchInput = document.getElementById('search').value.toLowerCase();
+      const levelFilter = document.getElementById('level-filter').value;
+      const filteredEntries = allEntries.filter(entry => {
+        const matchesSearch =
+          entry.title.toLowerCase().includes(searchInput) ||
+          entry.date.toLowerCase().includes(searchInput);
+        const matchesLevel = levelFilter === "" || entry.level === levelFilter;
+        return matchesSearch && matchesLevel;
+      });
+      renderResults(filteredEntries);
+    }
+
+    document.addEventListener('DOMContentLoaded', loadData);
+  </script>
+</body>
+</html>
