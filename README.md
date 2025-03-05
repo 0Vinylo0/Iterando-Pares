@@ -2,7 +2,9 @@
 Este proyecto es un script en Python para extraer datos de Pares de forma masiva, a partir de enlaces a unidades documentales, por ejemplo [https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/2199655](https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/2199655) o [https://pares.mcu.es/ParesBusquedas20/catalogo/description/2199655](https://pares.mcu.es/ParesBusquedas20/catalogo/description/2199655). Basta con pegar la url deseada en el archivo todo_urls.txt
 
 ***NOTA***
-- Instalar automatico con install.sh, ejecutar con `sh install.sh` Recomiendo leer la guia para mejor entendimiento del programa y el auto install ***IMPORTANTE*** automatico no terminado, la opcion de terminar proceso no funciona bien hay que retocarlo, puedes instalar y ejecutar fuera del script, entras en el python virtual y ejecutas con `python3 controller.py`
+- Añadido de Index.html en local, si ejectuas el programa y te genera un json con imagenes, o sin ellas podras visualizarlo mejor con este index.html, arrastras al buscador firefox. Para que firefox muestre esto sin problemas hay que desavilitar una opcion: `security.fileuri.strict_origin_policy` que este dento de la configuracion poniendo en este `about:config`
+  
+- Para futuro hare que el autoinstall `instal.sh` monte automaticamnte un server apache y muetre la infromacion
 
 ## Pares File Scraper
 
