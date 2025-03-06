@@ -74,6 +74,7 @@ source env/bin/activate
 
 ### 3. Instalar Dependencias
 ```bash
+apt install curl
 pip install -r requirements.txt
 ```
 
