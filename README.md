@@ -4,6 +4,8 @@ Este proyecto es un script en Python para extraer datos de Pares de forma masiva
 ***NOTA***
 - Añadido de Index.html en local, si ejectuas el programa y te genera un json con imagenes, o sin ellas podras visualizarlo mejor con este index.html, arrastras al buscador firefox. Para que firefox muestre esto sin problemas hay que desavilitar una opcion: `security.fileuri.strict_origin_policy` que este dento de la configuracion poniendo en este `about:config`
 
+- Añadido version en docker, para facilitar el uso al usuario en: [Iterando-Pares-Docker](https://github.com/0Vinylo0/Iterando-Pares-Docker)
+
 ## Pares File Scraper
 
 Este proyecto es un *scraper* de archivos diseñado para recorrer páginas de **pares.mcu.es** a través de TOR, utilizando Redis como sistema de almacenamiento temporal y cookies para descargar imágenes. El programa es capaz de procesar enlaces recursivamente, verificar imágenes descargadas, manejar errores y realizar descargas optimizadas.
