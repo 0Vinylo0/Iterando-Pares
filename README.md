@@ -3,8 +3,6 @@ Este proyecto es un script en Python para extraer datos de Pares de forma masiva
 
 ***NOTA***
 - Añadido de Index.html en local, si ejectuas el programa y te genera un json con imagenes, o sin ellas podras visualizarlo mejor con este index.html, arrastras al buscador firefox. Para que firefox muestre esto sin problemas hay que desavilitar una opcion: `security.fileuri.strict_origin_policy` que este dento de la configuracion poniendo en este `about:config`
-  
-- Para futuro hare que el autoinstall `instal.sh` monte automaticamnte un server apache y muetre la infromacion
 
 ## Pares File Scraper
 
