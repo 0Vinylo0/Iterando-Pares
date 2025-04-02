@@ -119,6 +119,24 @@ class ParesFileScraper:
         texto_limpio = re.sub(r'(\d+)', r' \1 ', texto_limpio).strip()
 
         return texto_limpio
+    
+    def process_find(self, url):
+        try:
+            html = self.curl_request(url, is_contiene=False)
+            time.sleep(2)
+            if not html:
+                return
+
+            soup = BeautifulSoup(html, 'html.parser')
+            desc_links = soup.find_all('a', href=re.compile(r'/description/\d+'))
+            desc_urls = [urljoin(self.base_url, link['href']) for link in desc_links]
+
+            if desc_urls:
+                print(f"Found description links in find: {desc_urls}")
+                for desc_url in desc_urls:
+                    self.r.rpush("todo_urls", desc_url)  # Añade a Redis
+        except Exception as e:
+            self.log_error(f"Error processing find URL {url}: {e}")
 
     def process_description(self, url):
         html_content = self.get_page(url)
@@ -382,6 +400,8 @@ class ParesFileScraper:
                 self.process_description(url)
             elif "contiene/" in url:
                 self.process_contiene(url)
+            elif "catalogo/find" in url:
+                self.process_find(url)
             self.mark_as_done(url)
 
     def __del__(self):
