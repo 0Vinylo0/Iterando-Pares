@@ -95,7 +95,6 @@
       transform: scale(1.1);
     }
 
-    /* Modal de Imagen */
     .image-modal {
       position: fixed;
       top: 0;
@@ -121,11 +120,9 @@
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
-      transition: transform 0.3s ease;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      opacity: 1;
       user-select: none;
-      -moz-user-select: none;
-      -webkit-user-select: none;
-      -ms-user-select: none;
     }
 
     .zoom-controls {
@@ -164,6 +161,28 @@
       justify-content: center;
       align-items: center;
     }
+
+    .carousel-controls {
+      position: absolute;
+      top: 50%;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
+    .carousel-controls button {
+      background: rgba(0, 0, 0, 0.5);
+      border: none;
+      color: white;
+      font-size: 2em;
+      padding: 10px;
+      margin: 0 10px;
+      cursor: pointer;
+      pointer-events: all;
+      border-radius: 50%;
+    }
   </style>
 </head>
 <body>
@@ -185,7 +204,6 @@
     </div>
   </div>
 
-  <!-- Modal de Imagen con Zoom -->
   <div id="imageModal" class="image-modal">
     <div class="modal-close" onclick="closeImageModal()">&times;</div>
     <div class="image-modal-content">
@@ -194,6 +212,10 @@
         <button onclick="zoomImage('in')">+</button>
         <button onclick="zoomImage('out')">-</button>
         <button onclick="resetZoom()">1:1</button>
+      </div>
+      <div class="carousel-controls">
+        <button onclick="showPreviousImage()">&#8592;</button>
+        <button onclick="showNextImage()">&#8594;</button>
       </div>
     </div>
   </div>
@@ -206,6 +228,8 @@
     let zoomLevel = 1;
     let isDragging = false;
     let startX, startY, translateX = 0, translateY = 0;
+    let currentGallery = [];
+    let currentImageIndex = 0;
 
     async function loadData() {
       const app = document.getElementById('app');
@@ -235,21 +259,6 @@
           };
         });
 
-        const imagePromises = allEntries
-          .filter(entry => entry.hasImage)
-          .map(async (entry) => {
-            try {
-              const imageFiles = await listImagesForEntry(entry.id);
-              if (imageFiles.length > 0) {
-                imagesByEntryId[entry.id] = imageFiles;
-              }
-            } catch (error) {
-              console.error(`Error cargando imágenes para ${entry.id}:`, error);
-            }
-          });
-
-        await Promise.all(imagePromises);
-
         populateLevelFilter();
         renderResults(allEntries);
       } catch (error) {
@@ -260,22 +269,60 @@
     async function listImagesForEntry(entryId) {
       const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif'];
       const imageFiles = [];
+      const maxTries = 10000;
+      const maxSkips = 20;
 
       for (const ext of imageExtensions) {
-        for (let i = 1; i <= 10; i++) {
+        let skips = 0;
+        for (let i = 1; i <= maxTries; i++) {
           const imagePath = `img/${entryId}/image_${i}${ext}`;
           try {
-            const response = await fetch(imagePath);
+            const response = await fetch(imagePath, { method: 'HEAD' });
             if (response.ok) {
               imageFiles.push(imagePath);
+              skips = 0;
+            } else {
+              skips++;
             }
-          } catch (error) {
-            // No hacer nada si la imagen no existe
+          } catch {
+            skips++;
           }
+          if (skips >= maxSkips) break;
         }
       }
 
       return imageFiles;
+    }
+
+    async function toggleImages(entryId) {
+      const gallery = document.getElementById(`gallery-${entryId}`);
+      const button = document.getElementById(`load-btn-${entryId}`);
+
+      if (gallery.children.length === 0) {
+        gallery.innerHTML = "<div style='color:gray'>Cargando imágenes...</div>";
+        gallery.style.display = "block";
+
+        const images = await listImagesForEntry(entryId);
+        imagesByEntryId[entryId] = images;
+
+        if (images.length === 0) {
+          gallery.innerHTML = "<div>No se encontraron imágenes</div>";
+        } else {
+          gallery.innerHTML = images
+            .map(img => `<img src="${img}" alt="Imagen" onclick="openImageModal('${img}')">`)
+            .join('');
+        }
+
+        button.textContent = "Ocultar imágenes";
+      } else {
+        if (gallery.style.display === "none") {
+          gallery.style.display = "flex";
+          button.textContent = "Ocultar imágenes";
+        } else {
+          gallery.style.display = "none";
+          button.textContent = "Ver imágenes";
+        }
+      }
     }
 
     function populateLevelFilter() {
@@ -291,42 +338,40 @@
     function renderResults(entries) {
       const app = document.getElementById('app');
       app.innerHTML = entries
-        .map(
-          entry => `
-        <div class="entry-card">
-          <h2 class="entry-title">${entry.title}</h2>
-          <div class="metadata">
-            <div>Fecha: ${entry.date}</div>
-            <div>Signatura: ${entry.signatura}</div>
-            <div>Código de Referencia: ${entry.code}</div>
-            <div>Nivel: ${entry.level}</div>
+        .map(entry => `
+          <div class="entry-card">
+            <h2 class="entry-title">${entry.title}</h2>
+            <div class="metadata">
+              <div>Fecha: ${entry.date}</div>
+              <div>Signatura: ${entry.signatura}</div>
+              <div>Código de Referencia: ${entry.code}</div>
+              <div>Nivel: ${entry.level}</div>
+            </div>
+            <a href="${entry.url}" target="_blank" class="pdf-link">Ver Descripción</a>
+            ${
+              entry.hasImage
+                ? `<button class="pdf-link" id="load-btn-${entry.id}" onclick="toggleImages('${entry.id}')">Ver imágenes</button>
+                   <div class="image-gallery" id="gallery-${entry.id}" style="display: none;"></div>`
+                : ''
+            }
           </div>
-          <a href="${entry.url}" target="_blank" class="pdf-link">Ver Descripción</a>
-          ${
-            entry.hasImage
-              ? `<div class="image-gallery" id="gallery-${entry.id}">
-                  ${
-                    imagesByEntryId[entry.id]
-                      ? imagesByEntryId[entry.id]
-                          .map(
-                            (img, index) =>
-                              `<img src="${img}" alt="Imagen" onclick="openImageModal('${img}')">`
-                          )
-                          .join('')
-                      : '<div>No se encontraron imágenes</div>'
-                  }
-                  </div>`
-              : ''
-          }
-        </div>
-      `
-        )
+        `)
         .join('');
     }
 
     function openImageModal(imageSrc) {
       const modal = document.getElementById('imageModal');
       const modalImage = document.getElementById('modalImage');
+
+      for (const [entryId, images] of Object.entries(imagesByEntryId)) {
+        const index = images.indexOf(imageSrc);
+        if (index !== -1) {
+          currentGallery = images;
+          currentImageIndex = index;
+          break;
+        }
+      }
+
       modalImage.src = imageSrc;
       modal.style.display = 'flex';
       currentImageSrc = imageSrc;
@@ -335,11 +380,45 @@
       translateY = 0;
       updateImageTransform();
 
-      // Añadir event listeners para arrastrar
       modalImage.addEventListener('mousedown', startDragging);
       document.addEventListener('mousemove', drag);
       document.addEventListener('mouseup', stopDragging);
       document.addEventListener('mouseleave', stopDragging);
+      document.addEventListener('keydown', handleKeyNavigation);
+    }
+
+    function showImageAtIndex(index) {
+      if (index >= 0 && index < currentGallery.length) {
+        currentImageIndex = index;
+        const modalImage = document.getElementById('modalImage');
+        modalImage.style.opacity = 0;
+        setTimeout(() => {
+          modalImage.src = currentGallery[currentImageIndex];
+          zoomLevel = 1;
+          translateX = 0;
+          translateY = 0;
+          updateImageTransform();
+          modalImage.style.opacity = 1;
+        }, 150);
+      }
+    }
+
+    function showPreviousImage() {
+      if (currentImageIndex > 0) {
+        showImageAtIndex(currentImageIndex - 1);
+      }
+    }
+
+    function showNextImage() {
+      if (currentImageIndex < currentGallery.length - 1) {
+        showImageAtIndex(currentImageIndex + 1);
+      }
+    }
+
+    function handleKeyNavigation(e) {
+      if (e.key === 'ArrowLeft') showPreviousImage();
+      else if (e.key === 'ArrowRight') showNextImage();
+      else if (e.key === 'Escape') closeImageModal();
     }
 
     function startDragging(e) {
@@ -347,16 +426,14 @@
         isDragging = true;
         startX = e.clientX - translateX;
         startY = e.clientY - translateY;
-        e.preventDefault(); // Prevenir selección de texto
+        e.preventDefault();
       }
     }
 
     function drag(e) {
       if (!isDragging) return;
-      
       translateX = e.clientX - startX;
       translateY = e.clientY - startY;
-      
       updateImageTransform();
     }
 
@@ -374,35 +451,22 @@
       const modalImage = document.getElementById('modalImage');
       modal.style.display = 'none';
       zoomLevel = 1;
-      
-      // Eliminar event listeners
       modalImage.removeEventListener('mousedown', startDragging);
       document.removeEventListener('mousemove', drag);
       document.removeEventListener('mouseup', stopDragging);
       document.removeEventListener('mouseleave', stopDragging);
+      document.removeEventListener('keydown', handleKeyNavigation);
     }
 
     function zoomImage(direction) {
-      const modalImage = document.getElementById('modalImage');
-      
-      if (direction === 'in' && zoomLevel < 3) {
-        zoomLevel += 0.5;
-      } else if (direction === 'out' && zoomLevel > 1) {
-        zoomLevel -= 0.5;
-      }
-      
-      // Ajustar los límites de movimiento cuando se hace zoom
-      if (zoomLevel === 1) {
-        translateX = 0;
-        translateY = 0;
-      }
-      
+      if (direction === 'in' && zoomLevel < 3) zoomLevel += 0.5;
+      else if (direction === 'out' && zoomLevel > 1) zoomLevel -= 0.5;
+      if (zoomLevel === 1) translateX = translateY = 0;
       updateImageTransform();
     }
 
     function resetZoom() {
-      translateX = 0;
-      translateY = 0;
+      translateX = translateY = 0;
       zoomLevel = 1;
       updateImageTransform();
     }
