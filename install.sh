@@ -77,6 +77,26 @@ start_program() {
   deactivate
 }
 
+# Función para iniciar el programa sin descargas
+start_program_skip() {
+  if ! is_installed; then
+    echo "El programa no está completamente instalado. Ejecuta la instalación primero."
+    return
+  fi
+
+  if [ -f "$pid_file" ] && kill -0 $(cat "$pid_file") 2>/dev/null; then
+    echo "El programa ya está en ejecución."
+    return
+  fi
+
+  echo "Iniciando el programa..."
+  cd "$repo_name" || die "Error al acceder al directorio del repositorio."
+  . "$venv_dir/bin/activate" || die "Error al activar el entorno virtual."
+  nohup python3 controller.py --skip-download 2>&1 | tee program.log &
+  echo $! > "$pid_file"
+  deactivate
+}
+
 # Función para detener el programa
 stop_program() {
   if ! is_installed; then
@@ -113,17 +133,19 @@ while true; do
   echo "\nMenu Principal"
   echo "1. Instalar todo"
   echo "2. Iniciar programa"
-  echo "3. Detener programa"
-  echo "4. Limpiar Redis"
-  echo "5. Salir"
+  echo "3. Iniciar programa sin descargas"
+  echo "4. Detener programa"
+  echo "5. Limpiar Redis"
+  echo "6. Salir"
   read -p "Selecciona una opción: " option
 
   case $option in
     1) install_all ;;
     2) start_program ;;
-    3) stop_program ;;
-    4) clean_redis ;;
-    5) echo "Saliendo..."; exit 0 ;;
+    3) start_program_skip ;;
+    4) stop_program ;;
+    5) clean_redis ;;
+    6) echo "Saliendo..."; exit 0 ;;
     *) echo "Opción no válida." ;;
   esac
 
