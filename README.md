@@ -120,6 +120,11 @@ pip install -r requirements.txt
 python3 controller.py
 ```
 - Esto inicializa Redis con las URLs y ejecuta el scraper en paralelo.
+  
+```bash
+python3 controller.py --skip-download
+```
+- Esto iniciara igual pero se saltara las descargas de las imagenas, pero aun asi genera las url de las imagenes
 
 ### 3. Verificar el Progreso
 Puedes monitorear las claves en Redis usando la CLI:
