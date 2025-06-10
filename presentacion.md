@@ -24,6 +24,10 @@
 
 El proyecto "Iterando-Pares" es un sistema de scraping web avanzado desarrollado en Python para extraer datos e imágenes de forma masiva del Portal de Archivos Españoles (PARES). El sistema está diseñado para procesar unidades documentales históricas de manera eficiente y anónima, utilizando tecnologías como TOR para el enmascaramiento de IP, Redis como base de datos temporal y un sistema sofisticado de manejo de cookies.
 
+<a href="https://www.python.org" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg" alt="python" width="40" height="40"/>
+<a href="https://www.linux.org/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/linux/linux-original.svg" alt="linux" width="40" height="40"/>
+<a href="https://www.torproject.org/es/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/TheTorProject/tor-media/25a7a48199a00da805fdc8de2a2f662b170bcead/Tor%20Logo/Purple.svg" alt="tor" width="40" height="40"/> <a href="https://redis.io/es/" target="_blank" rel="noreferrer"> <img src="https://raw.githubusercontent.com/devicons/devicon/ca28c779441053191ff11710fe24a9e6c23690d6/icons/redis/redis-original-wordmark.svg" alt="tor" width="40" height="40"/>
+
 El scraper es capaz de procesar dos tipos de URLs principales:
 - URLs de descripción: `https://pares.mcu.es/ParesBusquedas20/catalogo/description/[ID]`
 - URLs de contenido: `https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/[ID]`
