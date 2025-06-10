@@ -3,9 +3,8 @@
 
 ---
 
-**Autor:** [Tu Nombre y Apellidos]  
-**Fecha de Entrega:** [Fecha]  
-**Licencia:** Creative Commons [Especificar CC elegida]
+**Autor:** Andrés Del Pino Muñoz 
+**Fecha de Entrega:** 12-06-25
 
 ---
 
