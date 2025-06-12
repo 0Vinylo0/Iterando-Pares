@@ -140,57 +140,63 @@ class ParesFileScraper:
             self.log_error(f"Error processing find URL {url}: {e}")
 
     def process_description(self, url):
-        html_content = self.get_page(url)
-        if not html_content:
-            return
+        try:
+            # Obtener cookies para el contexto de "description"
+            self.get_cookies_from_show(url)  # igual que haces en `show_url`
 
-        match = re.search(r'description/(\d+)', url)
-        if match:
-            page_id = match.group(1)
-            soup = BeautifulSoup(html_content, 'html.parser')
+            # Usar curl con cookies
+            html_content = self.curl_request(url, is_contiene=False)
+            time.sleep(2)
+            if not html_content:
+                return
 
-            # Encola las URLs de “contiene”
-            contiene_links = soup.find_all('a', href=re.compile(r'/contiene/\d+'))
-            contiene_urls = [urljoin(self.base_url, link['href']) for link in contiene_links]
-            for contiene_url in contiene_urls:
-                self.r.rpush("todo_urls", contiene_url)
+            match = re.search(r'description/(\d+)', url)
+            if match:
+                page_id = match.group(1)
+                soup = BeautifulSoup(html_content, 'html.parser')
 
-            # Procesa el enlace “show” y genera links de descarga
-            has_image = False
-            img_download_links = []
-            show_link = soup.find('a', href=re.compile(r'/show/\d+'))
-            if show_link:
-                has_image = True
-                show_url = urljoin(self.base_url, show_link['href'])
-                self.get_cookies_from_show(show_url)
-                show_content = self.get_page(show_url)
-                if show_content:
-                    dbcodes = re.findall(
-                        r'VisorController.do?.*txt_id_imagen=(\d*)&txt_rotar=0&txt_contraste=0&appOrigen=&dbCode=(\d*)',
-                        show_content
-                    )
-                    img_download_links = [
-                        f"https://pares.mcu.es/ParesBusquedas20/ViewImage.do?accion=42"
-                        f"&txt_zoom=10&txt_contraste=0&txt_polarizado=&txt_brillo=10.0"
-                        f"&txt_contrast=1.0&txt_transformacion=-1&txt_descarga=1"
-                        f"&dbCode={dbcode[1]}&txt_id_imagen={dbcode[0]}"
-                        for dbcode in dbcodes
-                    ]
-                    print(f"Generated image download links: {img_download_links}")
+                # Encola las URLs de “contiene”
+                contiene_links = soup.find_all('a', href=re.compile(r'/contiene/\d+'))
+                contiene_urls = [urljoin(self.base_url, link['href']) for link in contiene_links]
+                for contiene_url in contiene_urls:
+                    self.r.rpush("todo_urls", contiene_url)
 
-                    # Solo descarga si skip_download es False
-                    if not self.skip_download:
-                        self.download_images(page_id, img_download_links)
+                # Procesa el enlace “show” y genera links de descarga
+                has_image = False
+                img_download_links = []
+                show_link = soup.find('a', href=re.compile(r'/show/\d+'))
+                if show_link:
+                    has_image = True
+                    show_url = urljoin(self.base_url, show_link['href'])
+                    show_content = self.curl_request(show_url, is_contiene=False, referer=url)
+                    if show_content:
+                        dbcodes = re.findall(
+                            r'VisorController.do?.*txt_id_imagen=(\d*)&txt_rotar=0&txt_contraste=0&appOrigen=&dbCode=(\d*)',
+                            show_content
+                        )
+                        img_download_links = [
+                            f"https://pares.mcu.es/ParesBusquedas20/ViewImage.do?accion=42"
+                            f"&txt_zoom=10&txt_contraste=0&txt_polarizado=&txt_brillo=10.0"
+                            f"&txt_contrast=1.0&txt_transformacion=-1&txt_descarga=1"
+                            f"&dbCode={dbcode[1]}&txt_id_imagen={dbcode[0]}"
+                            for dbcode in dbcodes
+                        ]
+                        print(f"Generated image download links: {img_download_links}")
 
-            # Guarda en el JSON la descripción y los enlaces
-            description_data = self.parse_html_to_json(html_content)
-            self.urls_description[page_id] = {
-                "url": url,
-                "additional_data": description_data,
-                "has_image": has_image,
-                "image_links": img_download_links,
-            }
-            self.save_descriptions()
+                        if not self.skip_download:
+                            self.download_images(page_id, img_download_links)
+
+                description_data = self.parse_html_to_json(html_content)
+                self.urls_description[page_id] = {
+                    "url": url,
+                    "additional_data": description_data,
+                    "has_image": has_image,
+                    "image_links": img_download_links,
+                }
+                self.save_descriptions()
+        except Exception as e:
+            self.log_error(f"Error processing description URL {url}: {e}")
+
 
 
     def log_error(self, message):
@@ -208,7 +214,7 @@ class ParesFileScraper:
         ]
         return random.choice(user_agents)
 
-    def curl_request(self, url, is_contiene=False):
+    def curl_request(self, url, is_contiene=False, referer=None):
         try:
             if is_contiene:
                 # Realizar una solicitud curl para obtener las cookies primero
@@ -246,11 +252,35 @@ class ParesFileScraper:
                     "--data-raw", "tambloque=10000&orderBy=0"
                 ]
             else:
+                get_cookie_command = [
+                    "curl",
+                    "-s",
+                    "-x", "socks5h://127.0.0.1:9050",
+                    "-c", self.cookie_file,
+                    "-H", f"User-Agent: {self.get_random_user_agent()}",
+                    url
+                ]
+                subprocess.run(get_cookie_command, capture_output=True, text=True)
+
+                # 2. Hacer curl con cabecera exacta
                 command = [
                     "curl",
                     "-sL",
-                    "-x", "socks5h://127.0.0.1:9050",  # Proxy de Tor
+                    "-x", "socks5h://127.0.0.1:9050",
+                    "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "-H", "Accept-Language: es-ES,es;q=0.9,en;q=0.8",
+                    "-H", "Cache-Control: max-age=0",
+                    "-H", "Connection: keep-alive",
+                    "-H", f"Cookie: {self.get_cookies()}",
+                    "-H", "Sec-Fetch-Dest: document",
+                    "-H", "Sec-Fetch-Mode: navigate",
+                    "-H", "Sec-Fetch-Site: none",
+                    "-H", "Sec-Fetch-User: ?1",
+                    "-H", "Upgrade-Insecure-Requests: 1",
                     "-H", f"User-Agent: {self.get_random_user_agent()}",
+                    "-H", 'sec-ch-ua: "Google Chrome";v="137", "Chromium";v="137", "Not/A)Brand";v="24"',
+                    "-H", "sec-ch-ua-mobile: ?1",
+                    "-H", 'sec-ch-ua-platform: "Android"',
                     url
                 ]
             result = subprocess.run(command, capture_output=True, text=True)
