@@ -1,4 +1,3 @@
-# iterando.py
 import redis
 import requests
 from bs4 import BeautifulSoup
@@ -9,17 +8,17 @@ import json
 import time
 import subprocess
 import random
+from multiprocessing import Process
 
 class ParesFileScraper:
-    def __init__(self, base_url="https://pares.mcu.es", skip_download=False):
+    def __init__(self, base_url="https://pares.mcu.es"):
         self.base_url = base_url
-        self.skip_download = skip_download  # Nueva bandera para omitir descargas
         self.session = requests.Session()
         self.session.proxies = {
             "http": "socks5h://127.0.0.1:9050",
             "https": "socks5h://127.0.0.1:9050"
         }
-        self.r = redis.StrictRedis(host='localhost', port=6379, db=0)
+        self.r = redis.StrictRedis(host='localhost', port=6379, db=0)  # Conexión a Redis
         self.description_file = "description_data.json"
         self.img_folder = "img"
         self.urls_description = self.load_existing_descriptions()
@@ -140,64 +139,59 @@ class ParesFileScraper:
             self.log_error(f"Error processing find URL {url}: {e}")
 
     def process_description(self, url):
-        try:
-            # Obtener cookies para el contexto de "description"
-            self.get_cookies_from_show(url)  # igual que haces en `show_url`
+        html_content = self.curl_request(url, is_contiene=False)
+        if not html_content:
+            return
 
-            # Usar curl con cookies
-            html_content = self.curl_request(url, is_contiene=False)
-            time.sleep(2)
-            if not html_content:
-                return
+        match = re.search(r'description/(\d+)', url)
+        if match:
+            page_id = match.group(1)
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            #En caso de que solo queramos el titulo descomentar 
 
-            match = re.search(r'description/(\d+)', url)
-            if match:
-                page_id = match.group(1)
-                soup = BeautifulSoup(html_content, 'html.parser')
+            #title_match = soup.find('h4', string=re.compile(r'Titulo Nombre Atribuido:'))
+            #title = title_match.find_next('p').text.strip() if title_match else "none"
 
-                # Encola las URLs de “contiene”
-                contiene_links = soup.find_all('a', href=re.compile(r'/contiene/\d+'))
-                contiene_urls = [urljoin(self.base_url, link['href']) for link in contiene_links]
+            contiene_links = soup.find_all('a', href=re.compile(r'/contiene/\d+'))
+            contiene_urls = [urljoin(self.base_url, link['href']) for link in contiene_links]
+            if contiene_urls:
+                print(f"Found contiene links: {contiene_urls}")
                 for contiene_url in contiene_urls:
-                    self.r.rpush("todo_urls", contiene_url)
+                    self.r.rpush("todo_urls", contiene_url)  # Añade a Redis
 
-                # Procesa el enlace “show” y genera links de descarga
-                has_image = False
-                img_download_links = []
-                show_link = soup.find('a', href=re.compile(r'/show/\d+'))
-                if show_link:
-                    has_image = True
-                    show_url = urljoin(self.base_url, show_link['href'])
-                    show_content = self.curl_request(show_url, is_contiene=False, referer=url)
-                    if show_content:
-                        dbcodes = re.findall(
-                            r'VisorController.do?.*txt_id_imagen=(\d*)&txt_rotar=0&txt_contraste=0&appOrigen=&dbCode=(\d*)',
-                            show_content
-                        )
-                        img_download_links = [
-                            f"https://pares.mcu.es/ParesBusquedas20/ViewImage.do?accion=42"
-                            f"&txt_zoom=10&txt_contraste=0&txt_polarizado=&txt_brillo=10.0"
-                            f"&txt_contrast=1.0&txt_transformacion=-1&txt_descarga=1"
-                            f"&dbCode={dbcode[1]}&txt_id_imagen={dbcode[0]}"
-                            for dbcode in dbcodes
-                        ]
-                        print(f"Generated image download links: {img_download_links}")
+            has_image = False
+            img_download_links = []  # Arreglo para almacenar los enlaces de descarga de imágenes
+            show_link = soup.find('a', href=re.compile(r'/show/\d+'))
+            if show_link:
+                has_image = True
+                show_url = urljoin(self.base_url, show_link['href'])
+                # Obtener cookies desde la página 'show'
+                self.get_cookies_from_show(show_url)
+                show_content = self.curl_request(show_url, is_contiene=False, referer=url)
+                if show_content:
+                    dbcodes = re.findall(r'VisorController.do?.*txt_id_imagen=(\d*)&txt_rotar=0&txt_contraste=0&appOrigen=&dbCode=(\d*)', show_content)
+                    img_download_links = [
+                        f"https://pares.mcu.es/ParesBusquedas20/ViewImage.do?accion=42&txt_zoom=10&txt_contraste=0&txt_polarizado=&txt_brillo=10.0&txt_contrast=1.0&txt_transformacion=-1&txt_descarga=1&dbCode={dbcode[1]}&txt_id_imagen={dbcode[0]}"
+                        for dbcode in dbcodes
+                    ]
+                    print(f"Generated image download links: {img_download_links}")
 
-                        if not self.skip_download:
-                            self.download_images(page_id, img_download_links)
+                    # Descargar cada imagen y guardarla en la carpeta correspondiente
+                    self.download_images(page_id, img_download_links)
 
-                description_data = self.parse_html_to_json(html_content)
-                self.urls_description[page_id] = {
-                    "url": url,
-                    "additional_data": description_data,
-                    "has_image": has_image,
-                    "image_links": img_download_links,
-                }
-                self.save_descriptions()
-        except Exception as e:
-            self.log_error(f"Error processing description URL {url}: {e}")
+            description_data = self.parse_html_to_json(html_content)
 
+            # Almacenar todos los datos en self.urls_description
+            self.urls_description[page_id] = {
+                "url": url,
+                "additional_data": description_data,
+                "has_image": has_image,
+                "image_links": img_download_links,  # Añadir los enlaces de descarga de imágenes
+                # Añadir todos los datos parseados
+            }
 
+            self.save_descriptions()
 
     def log_error(self, message):
         print(message)  # Simplificado para esta implementación
@@ -214,7 +208,7 @@ class ParesFileScraper:
         ]
         return random.choice(user_agents)
 
-    def curl_request(self, url, is_contiene=False, referer=None):
+    def curl_request(self, url, is_contiene=False):
         try:
             if is_contiene:
                 # Realizar una solicitud curl para obtener las cookies primero
@@ -455,6 +449,6 @@ def initialize_redis(todo_file):
                 r.rpush("todo_urls", url)
     print("URLs cargadas en Redis desde 'todo_urls.txt'.")
 
-def run_scraper(skip_download=False):
-    scraper = ParesFileScraper(skip_download=skip_download)
+def run_scraper():
+    scraper = ParesFileScraper()
     scraper.process_archive()
