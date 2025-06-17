@@ -1,5 +1,6 @@
 # iterando.py
 import redis
+import socket
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -15,108 +16,158 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
 class ParesFileScraper:
-    def __init__(self, base_url="https://pares.mcu.es", skip_download=False):
+    def __init__(self, base_url="https://pares.mcu.es", skip_download=False, rotate_after=200, use_tor=True):
         # Configurar sistema de logging
         self.setup_logging()
         self.logger.info(f"Inicializando ParesFileScraper con base_url={base_url}, skip_download={skip_download}")
 
         self.base_url = base_url
-        self.skip_download = skip_download  # Nueva bandera para omitir descargas
-        self.session = requests.Session()
-        self.session.proxies = {
-            "http": "socks5h://127.0.0.1:9050",
-            "https": "socks5h://127.0.0.1:9050"
-        }
+        self.skip_download = skip_download
+        self.use_tor = use_tor
+        self.rotate_after = rotate_after
+        self.request_count = 0
+        
+        self.current_browser = None  # Se define después
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._pw = None
+        self.cookie_file = "cookies.json"  # o cualquier nombre que uses para cookies
+
         self.r = redis.StrictRedis(host='localhost', port=6379, db=0)
         self.description_file = "description_data.json"
         self.img_folder = "img"
         self.urls_description = self.load_existing_descriptions()
-        self.cookie_file = f"cookies_{os.getpid()}.txt"  # Archivo único por proceso
-        
+
+        # Arrancar Playwright y primera sesión
+        self._pw = sync_playwright().start()
+        self._launch_new_session()
+
     def setup_logging(self):
-        """Configura el sistema de logging con múltiples handlers y niveles"""
         # Crear directorio de logs si no existe
         log_dir = "logs"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         
-        # Configurar el logger principal
         self.logger = logging.getLogger('ParesFileScraper')
         self.logger.setLevel(logging.DEBUG)
-        
-        # Evitar duplicar handlers si ya existen
         if self.logger.handlers:
             return
-        
-        # Formatter para los logs
+
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - PID:%(process)d - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
         )
-        
-        # Handler para archivo general (INFO y superior)
-        general_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'pares_scraper.log'),
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
-        )
-        general_handler.setLevel(logging.INFO)
-        general_handler.setFormatter(formatter)
-        
-        # Handler para errores (ERROR y superior)
-        error_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'pares_scraper_errors.log'),
-            maxBytes=5*1024*1024,  # 5MB
-            backupCount=3
-        )
-        error_handler.setLevel(logging.ERROR)
-        error_handler.setFormatter(formatter)
-        
-        # Handler para debug (todos los niveles)
-        debug_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'pares_scraper_debug.log'),
-            maxBytes=50*1024*1024,  # 50MB
-            backupCount=2
-        )
-        debug_handler.setLevel(logging.DEBUG)
-        debug_handler.setFormatter(formatter)
-        
-        # Handler para consola (INFO y superior)
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        console_handler.setFormatter(console_formatter)
-        
-        # Añadir handlers al logger
-        self.logger.addHandler(general_handler)
-        self.logger.addHandler(error_handler)
-        self.logger.addHandler(debug_handler)
-        self.logger.addHandler(console_handler)
-        
-        # Logger específico para descargas de imágenes
+
+        # Handlers generales
+        gen = RotatingFileHandler(os.path.join(log_dir, 'pares_scraper.log'), maxBytes=10*1024*1024, backupCount=5)
+        gen.setLevel(logging.INFO); gen.setFormatter(formatter)
+        err = RotatingFileHandler(os.path.join(log_dir, 'pares_scraper_errors.log'), maxBytes=5*1024*1024, backupCount=3)
+        err.setLevel(logging.ERROR); err.setFormatter(formatter)
+        dbg = RotatingFileHandler(os.path.join(log_dir, 'pares_scraper_debug.log'), maxBytes=50*1024*1024, backupCount=2)
+        dbg.setLevel(logging.DEBUG); dbg.setFormatter(formatter)
+        out = logging.StreamHandler()
+        out.setLevel(logging.INFO); out.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
+        self.logger.addHandler(gen)
+        self.logger.addHandler(err)
+        self.logger.addHandler(dbg)
+        self.logger.addHandler(out)
+
+        # Logs de imágenes
         self.image_logger = logging.getLogger('ParesFileScraper.Images')
         self.image_logger.setLevel(logging.DEBUG)
-        
-        image_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'image_downloads.log'),
-            maxBytes=20*1024*1024,  # 20MB
-            backupCount=3
-        )
-        image_handler.setLevel(logging.DEBUG)
-        image_handler.setFormatter(formatter)
-        self.image_logger.addHandler(image_handler)
-        
-        # Logger específico para Redis
+        img_h = RotatingFileHandler(os.path.join(log_dir, 'image_downloads.log'), maxBytes=20*1024*1024, backupCount=3)
+        img_h.setLevel(logging.DEBUG); img_h.setFormatter(formatter)
+        self.image_logger.addHandler(img_h)
+
+        # Logs de Redis
         self.redis_logger = logging.getLogger('ParesFileScraper.Redis')
         self.redis_logger.setLevel(logging.DEBUG)
+        redis_h = RotatingFileHandler(os.path.join(log_dir, 'redis_operations.log'), maxBytes=10*1024*1024, backupCount=2)
+        redis_h.setLevel(logging.DEBUG); redis_h.setFormatter(formatter)
+        self.redis_logger.addHandler(redis_h)
+
+    def ensure_tor_available(self, host="127.0.0.1", port=9050, timeout=5):
+        sock = socket.socket()
+        sock.settimeout(timeout)
+
+        try:
+            sock.connect((host, port))
+            self.logger.info(f"Tor SOCKS proxy disponible en {host}:{port}")
+        except Exception as e:
+            self.logger.error(f"Tor no responde en {host}:{port}: {e}")
+            raise RuntimeError("Asegúrate de que Tor esté ejecutándose antes de usar el scraper.")
         
-        redis_handler = RotatingFileHandler(
-            os.path.join(log_dir, 'redis_operations.log'),
-            maxBytes=10*1024*1024,  # 10MB
-            backupCount=2
-        )
-        redis_handler.setLevel(logging.DEBUG)
-        redis_handler.setFormatter(formatter)
-        self.redis_logger.addHandler(redis_handler)
+        try:
+            # Hacemos la petición usando el mismo contexto de Playwright
+            resp = self._context.request.get("https://api64.ipify.org", timeout=10000)
+            ip = resp.text()
+            self.logger.info(f"IP pública a través de Tor: {ip}")
+        except Exception as e:
+            self.logger.error(f"No se pudo obtener IP pública: {e}")
+
+        finally:
+            sock.close()
+
+    def _launch_new_session(self):
+        """Lanza un navegador/contexto/página nuevos con motor y UA aleatorios."""
+        types = ["chromium", "firefox", "webkit"]
+        self.current_browser = random.choice(types)
+        launcher = getattr(self._pw, self.current_browser)
+        self.logger.info(f"[SESSION] Lanzando {self.current_browser}")
+
+        # User-Agent aleatorio
+        ua = self.get_random_user_agent()
+        self.current_ua = ua
+        self.logger.debug(f"[SESSION] User-Agent asignado: {ua}")
+
+        # Montamos kwargs para lanzar el navegador
+        launch_kwargs = {"headless": True}
+        if self.use_tor:
+            launch_kwargs["proxy"] = {"server": "socks5://127.0.0.1:9050"}
+        self._browser = launcher.launch(**launch_kwargs)
+
+        # Montamos kwargs para el contexto
+        context_kwargs = {"user_agent": ua}
+        if self.use_tor:
+            context_kwargs["proxy"] = {"server": "socks5://127.0.0.1:9050"}
+        self._context = self._browser.new_context(**context_kwargs)
+
+        self._page = self._context.new_page()
+
+    def rotate_session(self):
+        """Cierra la sesión actual, solicita NEWNYM a Tor (si aplica) y relanza sesión."""
+        self.logger.info("[ROTATE] Rotando sesión…")
+
+        # Cerrar browser/context/page
+        for obj in (self._page, self._context, self._browser):
+            try: obj.close()
+            except: pass
+
+        # Sólo solicitar NEWNYM si estamos usando Tor
+        if self.use_tor:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect(("127.0.0.1", 9051))
+                    s.sendall(b'AUTHENTICATE "mi_password_control"\r\nSIGNAL NEWNYM\r\nQUIT\r\n')
+                    resp = s.recv(1024).decode()
+                    self.logger.debug(f"[ROTATE] ControlPort respondió: {resp}")
+            except Exception as e:
+                self.logger.error(f"[ROTATE] No se pudo rotar IP en Tor: {e}")
+            time.sleep(3)
+
+        # Relanzar nueva sesión limpia (será con o sin proxy, según use_tor)
+        self._launch_new_session()
+        self.request_count = 0
+        self.logger.info("[ROTATE] Sesión relanzada exitosamente")
+        # Esperar un momento para que Tor aplique el cambio
+        time.sleep(3)
+
+        # Relanzar nueva sesión limpia
+        self._launch_new_session()
+        self.request_count = 0
+
+        self.logger.info("[ROTATE] Sesión rotada exitosamente (navegador + IP + UA)")
 
     def load_existing_descriptions(self):
         self.logger.info(f"Cargando descripciones existentes desde {self.description_file}")
@@ -343,9 +394,10 @@ class ParesFileScraper:
                             f"&dbCode={dbcode[1]}&txt_id_imagen={dbcode[0]}"
                             for dbcode in dbcodes
                         ]
+                        count = len(img_download_links)
                         self.logger.info(f"Generados {len(img_download_links)} enlaces de descarga de imágenes")
-                        self.image_logger.info(f"Enlaces de descarga generados para page_id {page_id}: {img_download_links}")
-                        print(f"Generated image download links: {img_download_links}")
+                        self.image_logger.info(f"Enlaces de descarga generados para page_id {page_id}: {count}")
+                        print(f"Generated image download links: {count}")
 
                         if not self.skip_download:
                             self.logger.info(f"Iniciando descarga de imágenes para page_id: {page_id}")
@@ -388,179 +440,158 @@ class ParesFileScraper:
         return selected_ua
 
     def curl_request(self, url, is_contiene=False, referer=None, max_retries=3):
+        """
+        Realiza una petición con Playwright usando Tor + UA aleatorio.
+        Rotando sesión cada self.rotate_after peticiones.
+        Si Tor no conecta, hace fallback directo (sin proxy) una sola vez.
+        """
+        # Aseguramos que Tor esté disponible antes de empezar
+        self.ensure_tor_available()
+
         for attempt in range(1, max_retries + 1):
             try:
-                ip = self.session.get("https://api64.ipify.org", timeout=10).text.strip()
-            except Exception:
-                ip = "desconocida"
-            self.logger.info(f"[Intento {attempt}/{max_retries}] IP pública antes de Playwright: {ip}")
+                # Rotar sesión si toca
+                self.request_count += 1
+                if self.request_count > self.rotate_after:
+                    self.rotate_session()
+                    self.request_count = 1
 
-            try:
-                start_time = time.time()
-                browser_types = ["chromium", "firefox", "webkit"]
-                selected_browser = random.choice(browser_types)
-                user_agent = self.get_random_user_agent()
-                self.logger.info(f"Simulando navegador '{selected_browser}' con User-Agent: {user_agent}")
+                # Cabeceras comunes
+                headers = {
+                    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+                    "User-Agent": self.current_ua,
+                    "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+                    "sec-ch-ua-mobile": "?0",
+                    "sec-ch-ua-platform": '"Windows"'
+                }
 
-                with sync_playwright() as p:
-                    browser_launcher = getattr(p, selected_browser)
-                    browser = browser_launcher.launch(
-                        headless=True,
-                        proxy={"server": "socks5://127.0.0.1:9050"}
+                if is_contiene:
+                    # Petición AJAX “contiene”
+                    headers.update({
+                        "Accept": "text/html, */*; q=0.01",
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Origin": self.base_url,
+                        "Referer": referer or url,
+                        "Cache-Control": "max-age=0",
+                        "Connection": "keep-alive"
+                    })
+                    self._page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                    self._page.wait_for_load_state("networkidle", timeout=10000)
+                    response = self._page.request.post(
+                        "https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/SearchController.do",
+                        headers=headers,
+                        data={"tambloque": "10000", "orderBy": "0"}
                     )
-                    context = browser.new_context(user_agent=user_agent)
-                    page = context.new_page()
+                else:
+                    # Petición GET normal
+                    headers.update({
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Cache-Control": "max-age=0",
+                        "Connection": "keep-alive",
+                        "Upgrade-Insecure-Requests": "1"
+                    })
+                    response = self._page.goto(url, timeout=60000, wait_until="domcontentloaded")
 
-                    try:
-                        ip_check = page.request.get("https://api64.ipify.org", timeout=15000)
-                        if ip_check.ok:
-                            ip = ip_check.text()
-                            self.image_logger.info(f"IP pública actual (esperada Tor): {ip}")
-                        else:
-                            self.image_logger.warning(f"No se pudo verificar IP (status {ip_check.status})")
-                    except Exception as e:
-                        self.image_logger.warning(f"No se pudo verificar IP por Playwright: {e}")
-
-                    headers = {
-                        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-                        "User-Agent": user_agent,
-                        "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-                        "sec-ch-ua-mobile": "?0",
-                        "sec-ch-ua-platform": '"Windows"',
-                    }
-
-                    if is_contiene:
-                        try:
-                            page.goto(url, timeout=60000, wait_until="domcontentloaded")
-                            page.wait_for_load_state("networkidle", timeout=10000)
-                            self.logger.debug("Navegación inicial a página contiene completada")
-                        except Exception as e:
-                            self.logger.warning(f"Error en navegación inicial: {e}")
-
-                        headers.update({
-                            "Accept": "text/html, */*; q=0.01",
-                            "Connection": "keep-alive",
-                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                            "Origin": "https://pares.mcu.es",
-                            "Referer": url,
-                            "Sec-Fetch-Dest": "empty",
-                            "Sec-Fetch-Mode": "cors",
-                            "Sec-Fetch-Site": "same-origin",
-                            "X-Requested-With": "XMLHttpRequest"
-                        })
-
-                        post_data = {
-                            "tambloque": "10000",
-                            "orderBy": "0",
-                        }
-
-                        response = page.request.post(
-                            "https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/SearchController.do",
-                            headers=headers,
-                            data=post_data
-                        )
-
-                        self.logger.info(f"POST Response Status: {response.status}")
-                    else:
-                        headers.update({
-                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                            "Cache-Control": "max-age=0",
-                            "Connection": "keep-alive",
-                            "Sec-Fetch-Dest": "document",
-                            "Sec-Fetch-Mode": "navigate",
-                            "Sec-Fetch-Site": "none",
-                            "Sec-Fetch-User": "?1",
-                            "Upgrade-Insecure-Requests": "1"
-                        })
-                        response = page.goto(url, timeout=60000, wait_until="domcontentloaded")
-
-                    if response and hasattr(response, "ok") and response.ok:
-                        html = response.text()
-                        self.logger.info(f"Playwright request completado en {time.time() - start_time:.2f}s - URL: {url}")
-                        self.logger.debug(f"Status Code: {response.status}, Content Length: {len(html)}")
-                        if is_contiene:
-                            self.logger.debug(f"Contiene response preview: {html[:200]}")
-                        browser.close()
-                        return html
-                    else:
-                        raise Exception(f"Playwright falló con status: {getattr(response, 'status', 'sin respuesta')}")
+                # Si responde OK, devolver HTML
+                if response and getattr(response, "ok", True):
+                    html = response.text()
+                    self.logger.info(f"Página obtenida: {url} (Intento {attempt}/{max_retries})")
+                    return html
+                else:
+                    raise Exception(f"Status inválido: {getattr(response, 'status', None)}")
 
             except Exception as e:
-                self.logger.warning(f"Error Playwright fetching {url}: {e}")
-                self.logger.info(f"Reintentando ({attempt}/{max_retries}) en 5s...")
+                msg = str(e)
+                # Detectamos el fallo de Tor y hacemos fallback DIRECTO una sola vez
+                if "Host unreachable through SOCKSv5" in msg:
+                    self.logger.warning("[curl_request] Tor inaccesible, reintentando DIRECTO (sin proxy)")
+                    # Cerrar sesión proxy
+                    for obj in (self._page, self._context, self._browser):
+                        try: obj.close()
+                        except: pass
+
+                    # Relanzar sin proxy
+                    launcher = getattr(self._pw, self.current_browser)
+                    self._browser = launcher.launch(headless=True)
+                    self._context = self._browser.new_context(user_agent=self.current_ua)
+                    self._page = self._context.new_page()
+
+                    # Sólo un retry directo
+                    try:
+                        response2 = self._page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                        self._page.wait_for_load_state("networkidle", timeout=30000)
+                        if response2 and getattr(response2, "ok", True):
+                            html2 = response2.text()
+                            self.logger.info(f"[curl_request] Página obtenida DIRECTO: {url}")
+                            return html2
+                        else:
+                            self.logger.error(f"[curl_request] Falla DIRECTO: status {getattr(response2,'status',None)}")
+                            return ""
+                    except Exception as e2:
+                        self.logger.error(f"[curl_request] Excepción DIRECTO: {e2}")
+                        return ""
+
+            # Si no es Tor o ya agotó proxies, backoff normal
+            self.logger.warning(f"[Intento {attempt}] Error en curl_request({url}): {msg}")
+            if attempt < max_retries:
                 time.sleep(5)
-
-        self.logger.error(f"Fallo tras {max_retries} intentos con URL: {url}")
-        return ""
-
+            else:
+                self.logger.error(f"Fallo después de {max_retries} intentos: {url}")
+                return ""
 
     def download_images(self, page_id, img_links, max_retries=3):
-        self.image_logger.info(f"Iniciando descarga de {len(img_links)} imágenes para page_id: {page_id}")
+        self.image_logger.info(f"Descargando {len(img_links)} imágenes para page_id {page_id}")
+
+        # Contar todo el lote como 1 petición
+        self.request_count += 1
+        if self.request_count > self.rotate_after:
+            self.rotate_session()
+            self.request_count = 1
+
         img_dir = os.path.join(self.img_folder, page_id)
         os.makedirs(img_dir, exist_ok=True)
-    
-        last_downloaded_index = self.r.get(f"last_downloaded_image:{page_id}")
-        last_downloaded_index = int(last_downloaded_index.decode()) if last_downloaded_index else 0
-        self.image_logger.info(f"Último índice descargado para {page_id}: {last_downloaded_index}")
-    
-        for idx, img_url in enumerate(img_links[last_downloaded_index:], start=last_downloaded_index + 1):
-            img_path = os.path.join(img_dir, f"image_{idx}.jpg")
-    
-            if self.r.sismember(f"images:{page_id}", idx):
-                self.image_logger.debug(f"Imagen {idx} ya descargada para {page_id}. Saltando...")
-                continue
-            
-            for attempt in range(1, max_retries + 1):
-                self.image_logger.info(f"Descargando imagen {idx} (Intento {attempt}/{max_retries})")
-                try:
-                    with sync_playwright() as p:
-                        browser = p.chromium.launch(headless=True)
-                        context = browser.new_context(
-                            user_agent=self.get_random_user_agent(),
-                            proxy={"server": "socks5://127.0.0.1:9050"}
-                        )
-                        page = context.new_page()
-    
-                        # Verificar IP por Tor
-                        try:
-                            ip_check = page.request.get("https://api64.ipify.org", timeout=15000)
-                            if ip_check.ok:
-                                ip = ip_check.text()
-                                self.image_logger.info(f"[{idx}] IP pública actual (esperada Tor): {ip}")
-                            else:
-                                self.image_logger.warning(f"[{idx}] No se pudo verificar IP (status {ip_check.status})")
-                        except Exception as e:
-                            self.image_logger.warning(f"[{idx}] No se pudo verificar IP por Playwright: {e}")
-    
-                        # Intentar descargar imagen
-                        start_time = time.time()
-                        response = context.request.get(img_url, timeout=30000)
-                        if response.ok:
-                            with open(img_path, "wb") as f:
-                                f.write(response.body())
-                            elapsed = time.time() - start_time
-                            size = os.path.getsize(img_path)
-                            self.image_logger.info(f"Imagen {idx} descargada exitosamente: {img_path} ({size} bytes en {elapsed:.2f}s)")
-                            self.r.sadd(f"images:{page_id}", idx)
-                            self.r.set(f"last_downloaded_image:{page_id}", str(idx))
-                            break
-                        else:
-                            raise Exception(f"HTTP {response.status}")
-                except Exception as e:
-                    self.image_logger.warning(f"Fallo al descargar imagen {idx}: {e}")
-                    time.sleep(5)
-                else:
-                    break  # si no hubo error
-            else:
-                self.image_logger.error(f"No se pudo descargar imagen {idx} después de {max_retries} intentos")
-                self.r.sadd(f"failed_images:{page_id}", idx)
-    
-        # Verificación final
-        downloaded_count = len(self.r.smembers(f"images:{page_id}"))
-        if downloaded_count == len(img_links):
-            self.r.delete(f"last_downloaded_image:{page_id}")
-            self.image_logger.info(f"Descarga completada para {page_id}. Limpiado último índice.")
 
+        last = int(self.r.get(f"last_downloaded_image:{page_id}") or 0)
+        for idx, img_url in enumerate(img_links[last:], start=last + 1):
+            if self.r.sismember(f"images:{page_id}", idx):
+                continue
+
+            img_path = os.path.join(img_dir, f"image_{idx}.jpg")
+            for intento in range(1, max_retries + 1):
+                try:
+                    self.image_logger.info(f"  → Imagen {idx} (intento {intento}/{max_retries})")
+                    # Petición desde el mismo contexto, con Referer y cabeceras “navegador real”
+                    headers = {
+                        "Referer": self.base_url,
+                        "Accept": "image/avif,image/webp,image/apng,*/*;q=0.8",
+                        "User-Agent": self.current_ua,
+                    }
+                    resp = self._context.request.get(img_url, headers=headers, timeout=30000)
+                    if not resp.ok:
+                        raise Exception(f"HTTP {resp.status}")
+                    # Guardar fichero
+                    with open(img_path, "wb") as f:
+                        f.write(resp.body())
+                    self.image_logger.info(f"    ✔ Guardada ({os.path.getsize(img_path)} bytes)")
+                    self.r.sadd(f"images:{page_id}", idx)
+                    self.r.set(f"last_downloaded_image:{page_id}", str(idx))
+                    break
+                except Exception as e:
+                    self.image_logger.warning(f"    ✖ Error: {e}")
+                    time.sleep(1)
+            else:
+                self.image_logger.error(f"  ✖ No descargada tras {max_retries} intentos")
+                self.r.sadd(f"failed_images:{page_id}", idx)
+
+        # Limpieza si acabó
+        total = len(img_links)
+        done = self.r.scard(f"images:{page_id}")
+        if done == total:
+            self.r.delete(f"last_downloaded_image:{page_id}")
+            self.image_logger.info("✔ Todas las imágenes descargadas.")
+        else:
+            self.image_logger.warning(f"⚠ Faltan {total-done} imágenes.")
 
     def retry_failed_image_downloads(self, page_id):
         self.image_logger.info(f"Reintentando descargas fallidas para page_id: {page_id}")
@@ -743,31 +774,36 @@ class ParesFileScraper:
             except Exception as e:
                 self.logger.error(f"Error eliminando archivo de cookies: {e}")
 
+    def __del__(self):
+        """Cerrar limpio de Playwright al destruir la instancia."""
+        self.logger.info("[CLEANUP] Cerrando Playwright…")
+        for obj in (self._page, self._context, self._browser):
+            try: obj.close()
+            except: pass
+        try:
+            self._pw.stop()
+        except: pass
+
 def initialize_redis(todo_file):
     # Configurar logger para la función de inicialización
     logger = logging.getLogger('ParesFileScraper.Redis.Init')
     logger.setLevel(logging.INFO)
-    
     if not logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-    
     logger.info(f"Inicializando Redis con archivo: {todo_file}")
     r = redis.StrictRedis(host='localhost', port=6379, db=0)
-    
     # Verifica si la lista 'todo_urls' ya tiene elementos
     current_count = r.llen("todo_urls")
     if current_count > 0:
         logger.info(f"Redis 'todo_urls' ya contiene {current_count} elementos. Ignorando el archivo.")
         print("Redis 'todo_urls' ya contiene datos. Ignorando el archivo.")
         return
-
     # Añade URLs del archivo si 'todo_urls' está vacío
     added_count = 0
     skipped_count = 0
-    
     try:
         with open(todo_file, "r") as f:
             for line_num, line in enumerate(f, 1):
@@ -780,10 +816,8 @@ def initialize_redis(todo_file):
                     else:
                         skipped_count += 1
                         logger.debug(f"URL ya procesada, saltando línea {line_num}: {url}")
-                        
         logger.info(f"Carga completada: {added_count} URLs añadidas, {skipped_count} saltadas")
         print("URLs cargadas en Redis desde 'todo_urls.txt'.")
-        
     except FileNotFoundError:
         logger.error(f"Archivo no encontrado: {todo_file}")
         print(f"Error: No se encontró el archivo {todo_file}")
@@ -791,7 +825,7 @@ def initialize_redis(todo_file):
         logger.error(f"Error cargando URLs desde archivo: {e}")
         print(f"Error cargando URLs: {e}")
 
-def run_scraper(skip_download=False):
+def run_scraper(skip_download=False, tor_disable=False):
     # Configurar logger para la función principal
     logger = logging.getLogger('ParesFileScraper.Main')
     logger.setLevel(logging.INFO)
@@ -806,7 +840,7 @@ def run_scraper(skip_download=False):
     start_time = time.time()
     
     try:
-        scraper = ParesFileScraper(skip_download=skip_download)
+        scraper = ParesFileScraper(skip_download=skip_download, use_tor=not tor_disable)
         logger.info("Scraper inicializado exitosamente")
         scraper.process_archive()
         
