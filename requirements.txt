@@ -3,3 +3,4 @@ redis
 requests
 requests[socks]
 pysocks
+playwright
