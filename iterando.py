@@ -209,44 +209,6 @@ class ParesFileScraper:
         except requests.RequestException as e:
             self.log_error(f"Error fetching {url}: {e}")
             return None
-    
-    def save_playwright_cookies_to_file(self, target_url, output_path):
-            from playwright.sync_api import sync_playwright 
-
-            # Navegadores disponibles en Playwright
-            browser_types = ["chromium", "firefox", "webkit"]
-            selected_browser = random.choice(browser_types)
-
-            # Obtener User-Agent aleatorio
-            user_agent = self.get_random_user_agent()
-            self.logger.info(f"Simulando navegador '{selected_browser}' con User-Agent: {user_agent}")
-
-            with sync_playwright() as p:
-                browser_launcher = getattr(p, selected_browser)
-                browser = browser_launcher.launch(headless=True)
-
-                # Contexto con UA aleatorio
-                context = browser.new_context(user_agent=user_agent)
-                page = context.new_page()
-                page.goto(target_url)
-                page.wait_for_load_state("networkidle")
-
-                cookies = context.cookies()
-
-                # Guardar en formato Netscape (compatible con curl)
-                with open(output_path, "w") as f:
-                    f.write("# Netscape HTTP Cookie File\n")
-                    for cookie in cookies:
-                        domain = cookie["domain"]
-                        include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
-                        path = cookie["path"]
-                        secure = "TRUE" if cookie.get("secure") else "FALSE"
-                        expiration = int(cookie.get("expires", 0))
-                        name = cookie["name"]
-                        value = cookie["value"]
-                        f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expiration}\t{name}\t{value}\n")
-
-                browser.close()
 
     def parse_html_to_json(self, html_content):
         """
@@ -425,140 +387,152 @@ class ParesFileScraper:
         self.logger.debug(f"User-Agent seleccionado: {selected_ua}")
         return selected_ua
 
-    def curl_request(self, url, is_contiene=False, referer=None):
-        import random
+    def curl_request(self, url, is_contiene=False, referer=None, max_retries=3):
+        for attempt in range(1, max_retries + 1):
+            try:
+                ip = self.session.get("https://api64.ipify.org", timeout=10).text.strip()
+            except Exception:
+                ip = "desconocida"
+            self.logger.info(f"[Intento {attempt}/{max_retries}] IP pública antes de Playwright: {ip}")
 
-        try:
-            ip = self.session.get("https://api64.ipify.org", timeout=10).text.strip()
-        except Exception as e:
-            ip = "desconocida"
-            self.logger.warning(f"No se pudo obtener IP pública antes de playwright: {e}")
+            try:
+                start_time = time.time()
+                browser_types = ["chromium", "firefox", "webkit"]
+                selected_browser = random.choice(browser_types)
+                user_agent = self.get_random_user_agent()
+                self.logger.info(f"Simulando navegador '{selected_browser}' con User-Agent: {user_agent}")
 
-        try:
-            start_time = time.time()
-            self.logger.debug(f"Realizando Playwright request a: {url} (is_contiene={is_contiene})")
+                with sync_playwright() as p:
+                    browser_launcher = getattr(p, selected_browser)
+                    browser = browser_launcher.launch(
+                        headless=True,
+                        proxy={"server": "socks5://127.0.0.1:9050"}
+                    )
+                    context = browser.new_context(user_agent=user_agent)
+                    page = context.new_page()
 
-            browser_types = ["chromium", "firefox", "webkit"]
-            selected_browser = random.choice(browser_types)
-            user_agent = self.get_random_user_agent()
-            self.logger.info(f"Simulando navegador '{selected_browser}' con User-Agent: {user_agent}")
-
-            with sync_playwright() as p:
-                browser_launcher = getattr(p, selected_browser)
-                browser = browser_launcher.launch(
-                    headless=True,
-                    #proxy={"server": "socks5://127.0.0.1:9050"}  # Tor proxy
-                )
-
-                context = browser.new_context(user_agent=user_agent)
-                page = context.new_page()
-
-                headers = {
-                    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-                    "User-Agent": user_agent,
-                    "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": '"Windows"',
-                }
-
-                if is_contiene:
-                    self.logger.debug("Lanzando solicitud POST con Playwright (SearchController.do)")
-
-                    # NUEVO: Primero navegar a la página contiene para establecer contexto
                     try:
-                        page.goto(url)
-                        page.wait_for_load_state("networkidle", timeout=10000)
-                        self.logger.debug("Navegación inicial a página contiene completada")
+                        ip_check = page.request.get("https://api64.ipify.org", timeout=15000)
+                        if ip_check.ok:
+                            ip = ip_check.text()
+                            self.image_logger.info(f"IP pública actual (esperada Tor): {ip}")
+                        else:
+                            self.image_logger.warning(f"No se pudo verificar IP (status {ip_check.status})")
                     except Exception as e:
-                        self.logger.warning(f"Error en navegación inicial: {e}")
+                        self.image_logger.warning(f"No se pudo verificar IP por Playwright: {e}")
 
-                    headers.update({
-                        "Accept": "text/html, */*; q=0.01",
-                        "Connection": "keep-alive",
-                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                        "Origin": "https://pares.mcu.es",
-                        "Referer": url,  # Usar la URL de contiene como referer
-                        "Sec-Fetch-Dest": "empty",
-                        "Sec-Fetch-Mode": "cors",
-                        "Sec-Fetch-Site": "same-origin",
-                        "X-Requested-With": "XMLHttpRequest"
-                    })
-
-                    # MEJORADO: Datos del POST más completos
-                    post_data = {
-                        "tambloque": "10000",
-                        "orderBy": "0",
-                        # Añadir más parámetros si es necesario
+                    headers = {
+                        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+                        "User-Agent": user_agent,
+                        "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+                        "sec-ch-ua-mobile": "?0",
+                        "sec-ch-ua-platform": '"Windows"',
                     }
 
-                    response = page.request.post(
-                        "https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/SearchController.do",
-                        headers=headers,
-                        data=post_data
-                    )
-
-                    # DEBUGGING: Log de la respuesta POST
-                    self.logger.info(f"POST Response Status: {response.status}")
-                    self.logger.debug(f"POST Response Headers: {response.headers}")
-
-                else:
-                    self.logger.debug("Lanzando solicitud GET con Playwright")
-                    headers.update({
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Cache-Control": "max-age=0",
-                        "Connection": "keep-alive",
-                        "Sec-Fetch-Dest": "document",
-                        "Sec-Fetch-Mode": "navigate",
-                        "Sec-Fetch-Site": "none",
-                        "Sec-Fetch-User": "?1",
-                        "Upgrade-Insecure-Requests": "1"
-                    })
-                    response = page.request.get(url, headers=headers)
-
-                if response.ok:
-                    html = response.text()
-                    self.logger.info(f"Playwright request completado en {time.time() - start_time:.2f}s - URL: {url}")
-                    self.logger.debug(f"Status Code: {response.status}, Content Length: {len(html)}")
-
-                    # DEBUGGING: Para contiene, mostrar más info sobre la respuesta
                     if is_contiene:
-                        self.logger.debug(f"Contiene response preview: {html[:200]}")
+                        try:
+                            page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                            page.wait_for_load_state("networkidle", timeout=10000)
+                            self.logger.debug("Navegación inicial a página contiene completada")
+                        except Exception as e:
+                            self.logger.warning(f"Error en navegación inicial: {e}")
 
-                else:
-                    self.logger.error(f"Playwright falló con status {response.status} para URL: {url}")
-                    html = ""
+                        headers.update({
+                            "Accept": "text/html, */*; q=0.01",
+                            "Connection": "keep-alive",
+                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                            "Origin": "https://pares.mcu.es",
+                            "Referer": url,
+                            "Sec-Fetch-Dest": "empty",
+                            "Sec-Fetch-Mode": "cors",
+                            "Sec-Fetch-Site": "same-origin",
+                            "X-Requested-With": "XMLHttpRequest"
+                        })
 
-                browser.close()
-                return html
+                        post_data = {
+                            "tambloque": "10000",
+                            "orderBy": "0",
+                        }
 
-        except Exception as e:
-            self.log_error(f"Error Playwright fetching {url}: {e}")
-            return ""   
+                        response = page.request.post(
+                            "https://pares.mcu.es/ParesBusquedas20/catalogo/contiene/SearchController.do",
+                            headers=headers,
+                            data=post_data
+                        )
 
-    def download_images(self, page_id, img_links):
+                        self.logger.info(f"POST Response Status: {response.status}")
+                    else:
+                        headers.update({
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Cache-Control": "max-age=0",
+                            "Connection": "keep-alive",
+                            "Sec-Fetch-Dest": "document",
+                            "Sec-Fetch-Mode": "navigate",
+                            "Sec-Fetch-Site": "none",
+                            "Sec-Fetch-User": "?1",
+                            "Upgrade-Insecure-Requests": "1"
+                        })
+                        response = page.goto(url, timeout=60000, wait_until="domcontentloaded")
+
+                    if response and hasattr(response, "ok") and response.ok:
+                        html = response.text()
+                        self.logger.info(f"Playwright request completado en {time.time() - start_time:.2f}s - URL: {url}")
+                        self.logger.debug(f"Status Code: {response.status}, Content Length: {len(html)}")
+                        if is_contiene:
+                            self.logger.debug(f"Contiene response preview: {html[:200]}")
+                        browser.close()
+                        return html
+                    else:
+                        raise Exception(f"Playwright falló con status: {getattr(response, 'status', 'sin respuesta')}")
+
+            except Exception as e:
+                self.logger.warning(f"Error Playwright fetching {url}: {e}")
+                self.logger.info(f"Reintentando ({attempt}/{max_retries}) en 5s...")
+                time.sleep(5)
+
+        self.logger.error(f"Fallo tras {max_retries} intentos con URL: {url}")
+        return ""
+
+
+    def download_images(self, page_id, img_links, max_retries=3):
         self.image_logger.info(f"Iniciando descarga de {len(img_links)} imágenes para page_id: {page_id}")
         img_dir = os.path.join(self.img_folder, page_id)
         os.makedirs(img_dir, exist_ok=True)
-
+    
         last_downloaded_index = self.r.get(f"last_downloaded_image:{page_id}")
         last_downloaded_index = int(last_downloaded_index.decode()) if last_downloaded_index else 0
         self.image_logger.info(f"Último índice descargado para {page_id}: {last_downloaded_index}")
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=self.get_random_user_agent())
-            page = context.new_page()
-
-            for idx, img_url in enumerate(img_links[last_downloaded_index:], start=last_downloaded_index + 1):
-                img_path = os.path.join(img_dir, f"image_{idx}.jpg")
-
-                if self.r.sismember(f"images:{page_id}", idx):
-                    self.image_logger.debug(f"Imagen {idx} ya descargada para {page_id}. Saltando...")
-                    continue
-
-                for attempt in range(3):
-                    self.image_logger.info(f"Descargando imagen {idx} para {page_id} (Intento {attempt + 1}/3)")
-                    try:
+    
+        for idx, img_url in enumerate(img_links[last_downloaded_index:], start=last_downloaded_index + 1):
+            img_path = os.path.join(img_dir, f"image_{idx}.jpg")
+    
+            if self.r.sismember(f"images:{page_id}", idx):
+                self.image_logger.debug(f"Imagen {idx} ya descargada para {page_id}. Saltando...")
+                continue
+            
+            for attempt in range(1, max_retries + 1):
+                self.image_logger.info(f"Descargando imagen {idx} (Intento {attempt}/{max_retries})")
+                try:
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        context = browser.new_context(
+                            user_agent=self.get_random_user_agent(),
+                            proxy={"server": "socks5://127.0.0.1:9050"}
+                        )
+                        page = context.new_page()
+    
+                        # Verificar IP por Tor
+                        try:
+                            ip_check = page.request.get("https://api64.ipify.org", timeout=15000)
+                            if ip_check.ok:
+                                ip = ip_check.text()
+                                self.image_logger.info(f"[{idx}] IP pública actual (esperada Tor): {ip}")
+                            else:
+                                self.image_logger.warning(f"[{idx}] No se pudo verificar IP (status {ip_check.status})")
+                        except Exception as e:
+                            self.image_logger.warning(f"[{idx}] No se pudo verificar IP por Playwright: {e}")
+    
+                        # Intentar descargar imagen
                         start_time = time.time()
                         response = context.request.get(img_url, timeout=30000)
                         if response.ok:
@@ -572,15 +546,16 @@ class ParesFileScraper:
                             break
                         else:
                             raise Exception(f"HTTP {response.status}")
-                    except Exception as e:
-                        self.image_logger.warning(f"Fallo al descargar imagen {idx}: {e}")
-                        time.sleep(5)
+                except Exception as e:
+                    self.image_logger.warning(f"Fallo al descargar imagen {idx}: {e}")
+                    time.sleep(5)
                 else:
-                    self.image_logger.error(f"No se pudo descargar imagen {idx} después de 3 intentos")
-                    self.r.sadd(f"failed_images:{page_id}", idx)
-
-            browser.close()
-
+                    break  # si no hubo error
+            else:
+                self.image_logger.error(f"No se pudo descargar imagen {idx} después de {max_retries} intentos")
+                self.r.sadd(f"failed_images:{page_id}", idx)
+    
+        # Verificación final
         downloaded_count = len(self.r.smembers(f"images:{page_id}"))
         if downloaded_count == len(img_links):
             self.r.delete(f"last_downloaded_image:{page_id}")
