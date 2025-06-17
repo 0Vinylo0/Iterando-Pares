@@ -91,10 +91,51 @@ start_program_skip() {
     return
   fi
 
+
   echo "Iniciando el programa..."
   cd "$repo_name" || die "Error al acceder al directorio del repositorio."
   . "$venv_dir/bin/activate" || die "Error al activar el entorno virtual."
   nohup python3 controller.py --skip-download 2>&1 | tee program.log &
+  echo $! > "$pid_file"
+  deactivate
+}
+
+start_program_no_tor() {
+  if ! is_installed; then
+    echo "El programa no está completamente instalado. Ejecuta la instalación primero."
+    return
+  fi
+
+  if [ -f "$pid_file" ] && kill -0 $(cat "$pid_file") 2>/dev/null; then
+    echo "El programa ya está en ejecución."
+    return
+  fi
+
+
+  echo "Iniciando el programa..."
+  cd "$repo_name" || die "Error al acceder al directorio del repositorio."
+  . "$venv_dir/bin/activate" || die "Error al activar el entorno virtual."
+  nohup python3 controller.py --tor-disable 2>&1 | tee program.log &
+  echo $! > "$pid_file"
+  deactivate
+}
+
+start_program_no_tor_downloads() {
+  if ! is_installed; then
+    echo "El programa no está completamente instalado. Ejecuta la instalación primero."
+    return
+  fi
+
+  if [ -f "$pid_file" ] && kill -0 $(cat "$pid_file") 2>/dev/null; then
+    echo "El programa ya está en ejecución."
+    return
+  fi
+
+
+  echo "Iniciando el programa..."
+  cd "$repo_name" || die "Error al acceder al directorio del repositorio."
+  . "$venv_dir/bin/activate" || die "Error al activar el entorno virtual."
+  nohup python3 controller.py --tor-disable --skip-download 2>&1 | tee program.log &
   echo $! > "$pid_file"
   deactivate
 }
@@ -136,18 +177,22 @@ while true; do
   echo "1. Instalar todo"
   echo "2. Iniciar programa"
   echo "3. Iniciar programa sin descargas"
-  echo "4. Detener programa"
-  echo "5. Limpiar Redis"
-  echo "6. Salir"
+  echo "4. Iniciar programa sin tor"
+  echo "5. Iniciar programa sin tor ni descargas"
+  echo "6. Detener programa"
+  echo "7. Limpiar Redis"
+  echo "8. Salir"
   read -p "Selecciona una opción: " option
 
   case $option in
     1) install_all ;;
     2) start_program ;;
     3) start_program_skip ;;
-    4) stop_program ;;
-    5) clean_redis ;;
-    6) echo "Saliendo..."; exit 0 ;;
+    4) start_program_no_tor ;;
+    5) start_program_no_tor_downloads ;;
+    6) stop_program ;;
+    7) clean_redis ;;
+    8) echo "Saliendo..."; exit 0 ;;
     *) echo "Opción no válida." ;;
   esac
 
