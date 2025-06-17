@@ -45,6 +45,8 @@ install_all() {
   . "$venv_dir/bin/activate" || die "Error al activar el entorno virtual."
   pip install --upgrade pip || die "Error al actualizar pip."
   pip install -r "$repo_name/requirements.txt" || die "Error al instalar dependencias de Python."
+  playwright install
+  playwright install-deps
   deactivate
 
   echo "[5/6] Preparando archivo de URLs iniciales..."
