@@ -2,6 +2,7 @@ ControlPort 9051
 ExitNodes {es},{de},{nl},{fr}
 ExcludeExitNodes {ru},{cn},{ir},{pk},{nl}
 ClientUseIPv6 0
+CookieAuthentication 0
 
 CircuitBuildTimeout 20
 NewCircuitPeriod 60
