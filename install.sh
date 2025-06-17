@@ -2,7 +2,7 @@
 
 # Variables
 tor_password="mi_contraseña_segura"
-repo_name="/home/$(whoami)/Iterando-Pares"
+repo_name="./"
 script_dir="$(dirname "$0")"
 venv_dir="$repo_name/env"
 pid_file="$repo_name/program.pid"
