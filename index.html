@@ -241,18 +241,18 @@
         allEntries = Object.keys(data).map(id => {
           const entry = data[id];
           const additionalData = entry.additional_data || {};
-          const level = additionalData["Nivel de Descripción"] || "Desconocido";
+          const level = additionalData["Level of description"] || "Desconocido";
 
           uniqueLevels.add(level);
           return {
             id,
             title:
-              additionalData["Titulo Nombre Atribuido"] ||
-              additionalData["Titulo Nombre Formal"] ||
+              additionalData["Supplied Title"] ||
+              additionalData["Formal Title"] ||
               "Sin título",
-            date: additionalData["Fecha Creación"] || "Desconocida",
-            signatura: additionalData["Signatura"] || "Desconocida",
-            code: additionalData["Código de Referencia"] || "Desconocido",
+            date: additionalData["Date of creation"] || "Desconocida",
+            signatura: additionalData["Reference number"] || "Desconocida",
+            code: additionalData["Reference code"] || "Desconocido",
             level,
             url: entry.url,
             hasImage: entry.has_image
@@ -351,7 +351,7 @@
             ${
               entry.hasImage
                 ? `<button class="pdf-link" id="load-btn-${entry.id}" onclick="toggleImages('${entry.id}')">Ver imágenes</button>
-                   <div class="image-gallery" id="gallery-${entry.id}" style="display: none;"></div>`
+                  <div class="image-gallery" id="gallery-${entry.id}" style="display: none;"></div>`
                 : ''
             }
           </div>
