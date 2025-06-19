@@ -61,8 +61,13 @@ Este proyecto es un *scraper* de archivos diseñado para recorrer páginas de **
 
 ### 1. Clonar el Repositorio
 ```bash
-git clone <URL_DEL_REPO>
-cd <REPO_NAME>
+git clone https://github.com/0Vinylo0/Iterando-Pares
+cd Iterando-Pares
+```
+- En lugra de hacer la instalacion manual puedes usar el instalador que este en "instalacion_automatica_y_menu_uso.sh", tambien puedes usarlo como menu para controlar el programa
+
+```bash
+sh instalacion_automatica_y_menu_uso.sh
 ```
 
 ### 2. Crear un Entorno Virtual (Opcional pero Recomendado)
