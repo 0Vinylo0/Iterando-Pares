@@ -142,18 +142,61 @@ start_program_no_tor_downloads() {
 
 # Función para detener el programa
 stop_program() {
+  # Comprueba si está instalado
   if ! is_installed; then
     echo "El programa no está instalado."
-    return
+    return 1
   fi
 
-  if [ -f "$pid_file" ] && kill -0 $(cat "$pid_file") 2>/dev/null; then
-    echo "Deteniendo el programa..."
-    kill $(cat "$pid_file") && rm -f "$pid_file"
+  # Lee el PID desde el archivo
+  if [ -f "$pid_file" ]; then
+    pid=$(<"$pid_file")
+    # Verifica que el proceso exista
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Deteniendo el programa (PID $pid)…"
+      # Primero SIGTERM
+      kill "$pid"
+      # Espera un poco a que termine “amablemente”
+      for i in {1..5}; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+          break
+        fi
+        sleep 1
+      done
+      # Si sigue vivo, matamos con SIGKILL
+      if kill -0 "$pid" 2>/dev/null; then
+        echo "No respondió a SIGTERM; forzando con SIGKILL…"
+        kill -9 "$pid"
+      fi
+      # Borramos el archivo de PID
+      rm -f "$pid_file"
+    else
+      echo "El PID en $pid_file ($pid) no corresponde a un proceso activo."
+      rm -f "$pid_file"
+    fi
   else
-    echo "El programa no está en ejecución."
+    echo "No se encontró el archivo de PID ($pid_file)."
+  fi
+
+  # Por si hay instancias “huérfanas” ejecutando controller.py con python3
+  pids=$(pgrep -f "[p]ython3 controller\.py")
+  if [ -n "$pids" ]; then
+    echo "Detección de procesos adicionales: $pids"
+    echo "Deteniendo instancias remanentes…"
+    # Mismo tratamiento: SIGTERM y luego SIGKILL
+    echo "$pids" | xargs -r kill
+    sleep 1
+    # Si quedan
+    live=$(echo "$pids" | xargs -r -n1 sh -c 'kill -0 "$0" 2>/dev/null && printf "%s " "$0"' 2>/dev/null)
+    if [ -n "$live" ]; then
+      echo "Forzando con SIGKILL a: $live"
+      echo "$live" | xargs -r kill -9
+    fi
+  else
+    echo "No hay instancias remanentes de controller.py."
   fi
 }
+
 
 # Función para limpiar Redis
 clean_redis() {
@@ -175,10 +218,10 @@ clean_redis() {
 while true; do
   echo "\nMenu Principal"
   echo "1. Instalar todo"
-  echo "2. Iniciar programa"
-  echo "3. Iniciar programa sin descargas"
-  echo "4. Iniciar programa sin tor"
-  echo "5. Iniciar programa sin tor ni descargas"
+  echo "2. Descargar fichas e imagenes con tor"
+  echo "3. Descargar solo fichas con tor"
+  echo "4. Descargar fichas e imagenes sin tor"
+  echo "5. Descargar solo fichas sin tor"
   echo "6. Detener programa"
   echo "7. Limpiar Redis"
   echo "8. Salir"
