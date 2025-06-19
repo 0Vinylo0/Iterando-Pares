@@ -471,18 +471,16 @@
       updateImageTransform();
     }
 
-    function filterResults() {
-      const searchInput = document.getElementById('search').value.toLowerCase();
-      const levelFilter = document.getElementById('level-filter').value;
-      const filteredEntries = allEntries.filter(entry => {
-        const matchesSearch =
-          entry.title.toLowerCase().includes(searchInput) ||
-          entry.date.toLowerCase().includes(searchInput);
-        const matchesLevel = levelFilter === "" || entry.level === levelFilter;
-        return matchesSearch && matchesLevel;
-      });
-      renderResults(filteredEntries);
-    }
+  function filterResults() {
+    const searchInput = document.getElementById('search').value.toLowerCase();
+    const levelFilter = document.getElementById('level-filter').value;
+    const filteredEntries = allEntries.filter(entry => {
+      const matchesSearch = entry.title.toLowerCase().includes(searchInput); // Solo buscar por título
+      const matchesLevel = levelFilter === "" || entry.level === levelFilter;
+      return matchesSearch && matchesLevel;
+    });
+  renderResults(filteredEntries);
+  }
 
     document.addEventListener('DOMContentLoaded', loadData);
   </script>
