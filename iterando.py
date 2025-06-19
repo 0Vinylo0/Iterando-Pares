@@ -338,7 +338,6 @@ class ParesFileScraper:
 
             if desc_urls:
                 self.logger.info(f"Encontrados {len(desc_urls)} enlaces de descripción en find: {desc_urls}")
-                print(f"Found description links in find: {desc_urls}")
                 for desc_url in desc_urls:
                     self.r.rpush("todo_urls", desc_url)  # Añade a Redis
                     self.redis_logger.debug(f"Añadida URL description a Redis: {desc_url}")
@@ -397,7 +396,6 @@ class ParesFileScraper:
                         count = len(img_download_links)
                         self.logger.info(f"Generados {len(img_download_links)} enlaces de descarga de imágenes")
                         self.image_logger.info(f"Enlaces de descarga generados para page_id {page_id}: {count}")
-                        print(f"Generated image download links: {count}")
 
                         if not self.skip_download:
                             self.logger.info(f"Iniciando descarga de imágenes para page_id: {page_id}")
@@ -446,7 +444,8 @@ class ParesFileScraper:
         Si Tor no conecta, hace fallback directo (sin proxy) una sola vez.
         """
         # Aseguramos que Tor esté disponible antes de empezar
-        self.ensure_tor_available()
+        if self.use_tor:
+            self.ensure_tor_available()
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -705,7 +704,6 @@ class ParesFileScraper:
 
             if desc_urls:
                 self.logger.info(f"Encontrados {len(desc_urls)} enlaces de descripción en contiene: {desc_urls}")
-                print(f"Found description links: {desc_urls}")
                 for desc_url in desc_urls:
                     # VERIFICAR que no esté ya procesada
                     if not self.is_done(desc_url):
@@ -736,7 +734,6 @@ class ParesFileScraper:
                 continue
 
             self.logger.info(f"Procesando URL #{processed_count + 1}: {url}")
-            print(f"Processing: {url}")
             
             url_start_time = time.time()
             
@@ -845,7 +842,7 @@ def run_scraper(skip_download=False, tor_disable=False):
         scraper.process_archive()
         
         elapsed_time = time.time() - start_time
-        logger.info(f"Scraper completado exitosamente en {elapsed_time:.2f} segundos")
+        logger.info(f"¡FIN! Scraper completado exitosamente en {elapsed_time:.2f} segundos")
         
     except KeyboardInterrupt:
         logger.info("Scraper interrumpido por el usuario (Ctrl+C)")
